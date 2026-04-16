@@ -1,20 +1,25 @@
-import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import type { Metadata, Viewport } from "next";
+import { Noto_Sans } from "next/font/google";
 import "./globals.css";
+import Sidebar from "@/components/Sidebar";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+const notoSans = Noto_Sans({
+  variable: "--font-noto-sans",
   subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
+  weight: ["300", "400", "500"],
 });
 
 export const metadata: Metadata = {
-  title: "Website Clone",
-  description: "Pixel-perfect website clone",
+  title: "Language Reactor",
+  description: "Language Reactor: your language learning toolbox. Discover, understand, and learn from native materials, including Netflix and YouTube.",
+  icons: {
+    icon: "/favicon.ico",
+    apple: "/pwa/apple-icon-180.png",
+  },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#913ca0",
 };
 
 export default function RootLayout({
@@ -25,9 +30,14 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      className={`${notoSans.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full">
+        <Sidebar />
+        <div className="md:pl-[240px]">
+          {children}
+        </div>
+      </body>
     </html>
   );
 }
