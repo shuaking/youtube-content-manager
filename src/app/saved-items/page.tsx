@@ -162,11 +162,27 @@ export default function SavedItemsPage() {
               </button>
             </div>
             <div className="flex gap-2">
-              <button className="rounded-lg border border-white/20 p-2 text-white transition-all hover:bg-white/10">
+              <button
+                title="设置"
+                aria-label="设置"
+                className="rounded-lg border border-white/20 p-2 text-white transition-all hover:bg-white/10"
+              >
                 <span className="text-lg">⚙️</span>
               </button>
-              <button className="rounded-lg border border-white/20 p-2 text-white transition-all hover:bg-white/10">
-                <span className="text-lg">⛶</span>
+              <button
+                onClick={() => {
+                  if (typeof document === "undefined") return;
+                  if (!document.fullscreenElement) {
+                    document.documentElement.requestFullscreen().catch(() => {});
+                  } else {
+                    document.exitFullscreen().catch(() => {});
+                  }
+                }}
+                title="全屏"
+                aria-label="Fullscreen"
+                className="rounded-lg border border-white/20 px-3 py-2 text-sm text-white transition-all hover:bg-white/10"
+              >
+                <span className="mr-1">⛶</span>Fullscreen
               </button>
             </div>
           </div>

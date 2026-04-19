@@ -69,20 +69,45 @@ export default function PhrasePumpPage() {
     setTimeout(() => setIsPlaying(false), 2000);
   };
 
+  const handleFullscreen = () => {
+    if (typeof document === "undefined") return;
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen().catch(() => {});
+    } else {
+      document.exitFullscreen().catch(() => {});
+    }
+  };
+
   return (
     <main className="min-h-screen bg-background pt-[56px]">
       {/* Header */}
       <section className="w-full border-b border-white/10 py-8">
         <div className="mx-auto max-w-4xl px-6">
-          <div className="mb-4 flex items-center gap-3">
-            <span className="text-4xl leading-none">⛽</span>
-            <h1 className="text-3xl font-bold text-white md:text-4xl">
-              PhrasePump
-            </h1>
+          <div className="mb-4 flex items-start justify-between gap-4">
+            <div>
+              <div className="mb-3 flex items-center gap-3">
+                <span className="text-4xl leading-none">⛽</span>
+                <h1 className="text-3xl font-bold text-white md:text-4xl">
+                  PhrasePump
+                </h1>
+              </div>
+              <p className="text-white/70">
+                听力练习工具 - 通过包含已保存词汇的句子来提升您的听力理解能力
+              </p>
+            </div>
+            <button
+              onClick={handleFullscreen}
+              title="全屏"
+              aria-label="Fullscreen"
+              className="shrink-0 rounded-lg border border-white/20 px-3 py-2 text-sm text-white transition-all hover:bg-white/10"
+            >
+              <span className="mr-1">⛶</span>Fullscreen
+            </button>
           </div>
-          <p className="text-white/70">
-            听力练习工具 - 通过包含已保存词汇的句子来提升您的听力理解能力
-          </p>
+
+          <div className="mt-4 rounded-xl border border-secondary/30 bg-secondary/5 p-4 text-sm text-white/80">
+            💡 登录后可保存您的练习进度。当前为演示模式。
+          </div>
         </div>
       </section>
 

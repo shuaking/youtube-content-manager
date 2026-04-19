@@ -85,6 +85,32 @@ export default function ChatbotPage() {
     // 实际录音功能需要集成 Web Speech API
   };
 
+  const handleExport = () => {
+    if (messages.length === 0) return;
+    const lines = messages.map((m) => {
+      const ts = m.timestamp.toISOString();
+      const role = m.role === "user" ? "You" : "Aria";
+      return `[${ts}] ${role}:\n${m.content}\n`;
+    });
+    const blob = new Blob([lines.join("\n")], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `aria-chat-${Date.now()}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleFullscreen = () => {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen().catch(() => {});
+    } else {
+      document.exitFullscreen().catch(() => {});
+    }
+  };
+
   const generateMockResponse = (input: string): string => {
     return `很好的问题！关于"${input}"，让我来帮你。\n\n在英语中，你可以这样表达：\n"That's a great question about ${input}."\n\n这是一个很自然的表达方式。你想继续练习吗？`;
   };
@@ -99,14 +125,29 @@ export default function ChatbotPage() {
               Aria
             </button>
             <div className="ml-auto flex gap-2">
-              <button className="rounded-lg border border-white/20 p-2 text-white transition-all hover:bg-white/10">
-                <span className="text-lg">📤</span>
+              <button
+                onClick={handleExport}
+                disabled={messages.length === 0}
+                title="导出对话"
+                aria-label="导出对话"
+                className="rounded-lg border border-white/20 px-3 py-2 text-sm text-white transition-all hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-30"
+              >
+                <span className="mr-1">📤</span>导出
               </button>
-              <button className="rounded-lg border border-white/20 p-2 text-white transition-all hover:bg-white/10">
+              <button
+                title="设置"
+                aria-label="设置"
+                className="rounded-lg border border-white/20 p-2 text-white transition-all hover:bg-white/10"
+              >
                 <span className="text-lg">⚙️</span>
               </button>
-              <button className="rounded-lg border border-white/20 p-2 text-white transition-all hover:bg-white/10">
-                <span className="text-lg">⛶</span>
+              <button
+                onClick={handleFullscreen}
+                title="全屏"
+                aria-label="Fullscreen"
+                className="rounded-lg border border-white/20 px-3 py-2 text-sm text-white transition-all hover:bg-white/10"
+              >
+                <span className="mr-1">⛶</span>Fullscreen
               </button>
             </div>
           </div>

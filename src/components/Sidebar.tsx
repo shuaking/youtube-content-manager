@@ -7,18 +7,18 @@ import { ChevronRightIcon } from "./icons";
 
 const navigationItems = [
   { name: "首页", path: "/", icon: "🏠" },
-  { name: "学习仪表板", path: "/dashboard", icon: "📊" },
-  { name: "内容目录", path: "/catalog", icon: "📺" },
-  { name: "内容管理", path: "/admin", icon: "🔧" },
+  { name: "媒体内容", path: "/catalog", icon: "📺" },
+  { name: "Chatbot", path: "/chatbot", icon: "🤖", badge: "NEW" },
   { name: "PhrasePump", path: "/phrasepump", icon: "⛽" },
-  { name: "已保存词汇", path: "/saved-items", icon: "📚" },
+  { name: "已保存项目", path: "/saved-items", icon: "📚" },
   { name: "词汇复习", path: "/review", icon: "🎴" },
-  { name: "历史记录", path: "/history", icon: "📜" },
-  { name: "Aria 助手", path: "/chatbot", icon: "🤖" },
   { name: "文本分析", path: "/text", icon: "📝" },
-  { name: "Pro 模式", path: "/pro-mode", icon: "💎" },
-  { name: "帮助中心", path: "/help/basic", icon: "❓" },
+  { name: "帮助", path: "/help/basic", icon: "❓" },
   { name: "设置", path: "/settings", icon: "⚙️" },
+  { name: "学习仪表板", path: "/dashboard", icon: "📊" },
+  { name: "历史记录", path: "/history", icon: "📜" },
+  { name: "内容管理", path: "/admin", icon: "🔧" },
+  { name: "Pro 模式", path: "/pro-mode", icon: "💎" },
 ];
 
 export default function Sidebar() {
@@ -63,7 +63,14 @@ export default function Sidebar() {
               >
                 <span className="text-xl leading-none">{item.icon}</span>
                 {!isCollapsed && (
-                  <span className="text-sm font-medium">{item.name}</span>
+                  <span className="flex flex-1 items-center gap-2 text-sm font-medium">
+                    {item.name}
+                    {"badge" in item && item.badge && (
+                      <span className="rounded bg-red-500 px-1.5 py-0.5 text-[10px] font-bold text-white">
+                        {item.badge}
+                      </span>
+                    )}
+                  </span>
                 )}
               </Link>
             );
@@ -109,7 +116,14 @@ export default function Sidebar() {
                 }`}
               >
                 <span className="text-xl leading-none">{item.icon}</span>
-                <span className="text-sm font-medium">{item.name}</span>
+                <span className="flex flex-1 items-center gap-2 text-sm font-medium">
+                  {item.name}
+                  {"badge" in item && item.badge && (
+                    <span className="rounded bg-red-500 px-1.5 py-0.5 text-[10px] font-bold text-white">
+                      {item.badge}
+                    </span>
+                  )}
+                </span>
               </Link>
             );
           })}

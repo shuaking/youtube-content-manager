@@ -1,350 +1,254 @@
 "use client";
 
 import { useState } from "react";
+import { languages } from "@/types/catalog";
 
-const settingsTabs = [
-  { id: "general", label: "常规" },
-  { id: "subtitles", label: "字幕" },
-  { id: "playback", label: "播放" },
-  { id: "vocabulary", label: "词汇" },
-  { id: "account", label: "账户" },
+const uiLanguages = [
+  { value: "zh-CN", label: "中文（简体）" },
+  { value: "zh-TW", label: "中文（繁體）" },
+  { value: "en", label: "English" },
+  { value: "ja", label: "日本語" },
+  { value: "ko", label: "한국어" },
+  { value: "es", label: "Español" },
+  { value: "fr", label: "Français" },
+  { value: "de", label: "Deutsch" },
 ];
 
 export default function SettingsPage() {
-  const [activeTab, setActiveTab] = useState("general");
+  const [learningLang, setLearningLang] = useState("en");
+  const [translationLang, setTranslationLang] = useState("zh-CN");
+  const [uiLang, setUiLang] = useState("zh-CN");
+  const [showMiniDict, setShowMiniDict] = useState(true);
+  const [speakOnClick, setSpeakOnClick] = useState(true);
+  const [customDictUrl, setCustomDictUrl] = useState("");
+  const [autoPause, setAutoPause] = useState(true);
+  const [hideSubtitles, setHideSubtitles] = useState(false);
+  const [smartHighlight, setSmartHighlight] = useState(true);
+  const [showFurigana, setShowFurigana] = useState(false);
 
   return (
     <main className="min-h-screen bg-background pt-[56px]">
-      <div className="mx-auto max-w-6xl px-6 py-12">
-        {/* Header */}
-        <div className="mb-8">
-          <h1 className="mb-2 text-4xl font-bold text-white">设置</h1>
-          <p className="text-white/70">自定义您的 Language Reactor 体验</p>
+      <div className="mx-auto max-w-4xl px-6 py-12">
+        <div className="mb-8 flex items-center justify-between">
+          <div>
+            <h1 className="mb-2 text-4xl font-bold text-white">设置</h1>
+            <p className="text-white/70">自定义您的 Language Reactor 体验</p>
+          </div>
+          <button
+            className="rounded-lg border border-white/20 px-3 py-2 text-sm text-white transition-all hover:bg-white/10"
+            title="全屏"
+          >
+            ⛶ Fullscreen
+          </button>
         </div>
 
-        {/* Tabs */}
-        <div className="mb-8 flex gap-2 overflow-x-auto border-b border-white/10 pb-2">
-          {settingsTabs.map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={`whitespace-nowrap rounded-lg px-6 py-2 font-semibold transition-all ${
-                activeTab === tab.id
-                  ? "bg-secondary text-secondary-foreground"
-                  : "text-white/70 hover:bg-white/5 hover:text-white"
-              }`}
-            >
-              {tab.label}
+        {/* App Installation */}
+        <Section title="App Installation" icon="📲">
+          <p className="mb-3 text-sm leading-relaxed text-white/70">
+            Install Language Reactor on your device for a faster, full-screen experience with easy access from your home screen or desktop. To install, open your browser menu and select &quot;Install app&quot; or &quot;Add to Home Screen&quot;.
+          </p>
+          <div className="flex gap-4 text-xs text-white/50">
+            <span>Browser SW: <span className="text-green-400">active</span></span>
+            <span>Prompt: <span className="text-white/40">Unavailable</span></span>
+          </div>
+        </Section>
+
+        {/* Account Info */}
+        <Section title="账户信息" icon="👤">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-white">未登录</p>
+              <p className="mt-1 text-sm text-white/60">登录后可同步进度、保存词汇和使用 Pro 功能</p>
+            </div>
+            <button className="rounded-lg bg-secondary px-6 py-2 font-semibold text-secondary-foreground transition-all hover:opacity-90">
+              登录
             </button>
-          ))}
-        </div>
+          </div>
+        </Section>
 
-        {/* Settings Content */}
-        <div className="rounded-2xl border border-white/10 bg-card p-8">
-          {activeTab === "general" && <GeneralSettings />}
-          {activeTab === "subtitles" && <SubtitleSettings />}
-          {activeTab === "playback" && <PlaybackSettings />}
-          {activeTab === "vocabulary" && <VocabularySettings />}
-          {activeTab === "account" && <AccountSettings />}
-        </div>
+        {/* Basic Settings */}
+        <Section title="基本设置" icon="⚙️">
+          <div className="space-y-4">
+            <SelectRow
+              label="学习语言"
+              value={learningLang}
+              onChange={setLearningLang}
+              options={languages.map((l) => ({ value: l.code, label: `${l.flag} ${l.nativeName}` }))}
+            />
+            <SelectRow
+              label="翻译语言"
+              value={translationLang}
+              onChange={setTranslationLang}
+              options={uiLanguages}
+            />
+          </div>
+        </Section>
 
-        {/* Save Button */}
-        <div className="mt-8 flex justify-end gap-4">
-          <button className="rounded-lg border border-white/20 px-6 py-3 font-semibold text-white transition-all hover:bg-white/10">
-            重置为默认
+        {/* Vocabulary Marking */}
+        <Section title="词汇标记" icon="🖍️">
+          <p className="mb-3 text-sm text-white/60">
+            智能高亮和难度标记，登录后自动同步学习进度
+          </p>
+          <CheckboxRow
+            label="智能高亮已保存词汇"
+            hint="识别复数、动词变位等词形变化"
+            checked={smartHighlight}
+            onChange={setSmartHighlight}
+          />
+          <button className="mt-3 rounded-lg border border-white/20 px-4 py-2 text-sm font-semibold text-white transition-all hover:bg-white/10">
+            登录以启用更多词汇功能
           </button>
-          <button className="rounded-lg bg-secondary px-6 py-3 font-semibold text-secondary-foreground transition-all hover:opacity-90">
-            保存设置
-          </button>
-        </div>
+        </Section>
+
+        {/* Dictionary */}
+        <Section title="词典" icon="📖">
+          <CheckboxRow
+            label="显示迷你词典"
+            checked={showMiniDict}
+            onChange={setShowMiniDict}
+          />
+          <CheckboxRow
+            label="单击时朗读单词"
+            checked={speakOnClick}
+            onChange={setSpeakOnClick}
+          />
+          <div className="mt-4">
+            <label className="mb-2 block text-sm font-semibold text-white/80">
+              用户自定义词典网址
+            </label>
+            <input
+              type="text"
+              placeholder="http://www.example.com?q=WORD"
+              value={customDictUrl}
+              onChange={(e) => setCustomDictUrl(e.target.value)}
+              className="w-full rounded-lg border border-white/10 bg-background px-4 py-2 text-sm text-white placeholder-white/40 outline-none transition-all focus:border-white/20 focus:ring-2 focus:ring-secondary/50"
+            />
+            <p className="mt-2 text-xs text-white/50">
+              使用 <code className="rounded bg-white/10 px-1">WORD</code> 作为占位符
+            </p>
+          </div>
+        </Section>
+
+        {/* Subtitles & Playback */}
+        <Section title="字幕与播放" icon="🎬">
+          <CheckboxRow
+            label="字幕后自动暂停"
+            hint="播放到每条字幕结尾时自动暂停"
+            checked={autoPause}
+            onChange={setAutoPause}
+          />
+          <CheckboxRow
+            label="默认隐藏字幕"
+            hint="鼠标悬停时显示，训练听力"
+            checked={hideSubtitles}
+            onChange={setHideSubtitles}
+          />
+          <CheckboxRow
+            label="显示注音（假名/拼音）"
+            hint="为使用不同书写系统的语言显示发音"
+            checked={showFurigana}
+            onChange={setShowFurigana}
+          />
+        </Section>
+
+        {/* Other Options */}
+        <Section title="其他选项" icon="🌐">
+          <SelectRow
+            label="UI Language / 界面语言"
+            value={uiLang}
+            onChange={setUiLang}
+            options={uiLanguages}
+          />
+          <div className="mt-4 flex items-center gap-3">
+            <a
+              href="https://github.com/anthropics/claude-code/releases"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-sm text-secondary hover:underline"
+            >
+              最新更新
+            </a>
+            <span className="text-white/30">•</span>
+            <span className="text-sm text-white/60">版本 0.3.1</span>
+          </div>
+        </Section>
       </div>
     </main>
   );
 }
 
-function GeneralSettings() {
-  return (
-    <div className="space-y-6">
-      <h2 className="text-2xl font-bold text-white">常规设置</h2>
-
-      <SettingItem
-        label="界面语言"
-        description="选择 Language Reactor 的显示语言"
-      >
-        <select className="rounded-lg border border-white/20 bg-white/5 px-4 py-2 text-white outline-none transition-all focus:border-secondary">
-          <option>中文（简体）</option>
-          <option>English</option>
-          <option>日本語</option>
-          <option>Español</option>
-        </select>
-      </SettingItem>
-
-      <SettingItem
-        label="自动启动"
-        description="在 Netflix 和 YouTube 上自动激活扩展"
-      >
-        <Toggle />
-      </SettingItem>
-
-      <SettingItem
-        label="键盘快捷键"
-        description="启用键盘快捷键控制播放和字幕"
-      >
-        <Toggle defaultChecked />
-      </SettingItem>
-
-      <SettingItem
-        label="主题"
-        description="选择界面主题"
-      >
-        <select className="rounded-lg border border-white/20 bg-white/5 px-4 py-2 text-white outline-none transition-all focus:border-secondary">
-          <option>深色</option>
-          <option>浅色</option>
-          <option>跟随系统</option>
-        </select>
-      </SettingItem>
-    </div>
-  );
-}
-
-function SubtitleSettings() {
-  return (
-    <div className="space-y-6">
-      <h2 className="text-2xl font-bold text-white">字幕设置</h2>
-
-      <SettingItem
-        label="显示双语字幕"
-        description="同时显示原文和翻译字幕"
-      >
-        <Toggle defaultChecked />
-      </SettingItem>
-
-      <SettingItem
-        label="字幕位置"
-        description="选择字幕在屏幕上的位置"
-      >
-        <select className="rounded-lg border border-white/20 bg-white/5 px-4 py-2 text-white outline-none transition-all focus:border-secondary">
-          <option>底部</option>
-          <option>顶部</option>
-          <option>侧边</option>
-        </select>
-      </SettingItem>
-
-      <SettingItem
-        label="字体大小"
-        description="调整字幕文字大小"
-      >
-        <input
-          type="range"
-          min="12"
-          max="32"
-          defaultValue="16"
-          className="w-full"
-        />
-      </SettingItem>
-
-      <SettingItem
-        label="自动隐藏字幕"
-        description="鼠标悬停时才显示字幕"
-      >
-        <Toggle />
-      </SettingItem>
-
-      <SettingItem
-        label="高亮已保存词汇"
-        description="在字幕中高亮显示您保存的词汇"
-      >
-        <Toggle defaultChecked />
-      </SettingItem>
-    </div>
-  );
-}
-
-function PlaybackSettings() {
-  return (
-    <div className="space-y-6">
-      <h2 className="text-2xl font-bold text-white">播放设置</h2>
-
-      <SettingItem
-        label="自动暂停"
-        description="每句字幕后自动暂停"
-      >
-        <Toggle />
-      </SettingItem>
-
-      <SettingItem
-        label="默认播放速度"
-        description="设置视频的默认播放速度"
-      >
-        <select className="rounded-lg border border-white/20 bg-white/5 px-4 py-2 text-white outline-none transition-all focus:border-secondary">
-          <option>0.5x</option>
-          <option>0.75x</option>
-          <option selected>1.0x</option>
-          <option>1.25x</option>
-          <option>1.5x</option>
-          <option>2.0x</option>
-        </select>
-      </SettingItem>
-
-      <SettingItem
-        label="循环播放"
-        description="重复播放当前句子"
-      >
-        <Toggle />
-      </SettingItem>
-
-      <SettingItem
-        label="跳过片头片尾"
-        description="自动跳过 Netflix 的片头和片尾"
-      >
-        <Toggle defaultChecked />
-      </SettingItem>
-    </div>
-  );
-}
-
-function VocabularySettings() {
-  return (
-    <div className="space-y-6">
-      <h2 className="text-2xl font-bold text-white">词汇设置</h2>
-
-      <SettingItem
-        label="自动保存点击的词汇"
-        description="点击词汇时自动添加到已保存列表"
-      >
-        <Toggle />
-      </SettingItem>
-
-      <SettingItem
-        label="显示词频"
-        description="显示词汇在语料库中的使用频率"
-      >
-        <Toggle defaultChecked />
-      </SettingItem>
-
-      <SettingItem
-        label="词汇难度等级"
-        description="根据难度等级标记词汇"
-      >
-        <Toggle defaultChecked />
-      </SettingItem>
-
-      <SettingItem
-        label="导出格式"
-        description="选择导出到 Anki 的卡片格式"
-      >
-        <select className="rounded-lg border border-white/20 bg-white/5 px-4 py-2 text-white outline-none transition-all focus:border-secondary">
-          <option>基础格式</option>
-          <option>带截图</option>
-          <option>带音频</option>
-          <option>完整格式</option>
-        </select>
-      </SettingItem>
-    </div>
-  );
-}
-
-function AccountSettings() {
-  return (
-    <div className="space-y-6">
-      <h2 className="text-2xl font-bold text-white">账户设置</h2>
-
-      <div className="rounded-xl border border-white/10 bg-white/5 p-6">
-        <div className="mb-4 flex items-center justify-between">
-          <div>
-            <h3 className="font-semibold text-white">当前计划</h3>
-            <p className="text-sm text-white/60">免费版</p>
-          </div>
-          <a
-            href="/pro-mode"
-            className="rounded-lg bg-secondary px-4 py-2 font-semibold text-secondary-foreground transition-all hover:opacity-90"
-          >
-            升级到 Pro
-          </a>
-        </div>
-      </div>
-
-      <SettingItem
-        label="邮箱地址"
-        description="用于接收通知和重置密码"
-      >
-        <input
-          type="email"
-          placeholder="your@email.com"
-          className="rounded-lg border border-white/20 bg-white/5 px-4 py-2 text-white outline-none transition-all focus:border-secondary"
-        />
-      </SettingItem>
-
-      <SettingItem
-        label="数据同步"
-        description="在多个设备间同步您的词汇和设置"
-      >
-        <Toggle defaultChecked />
-      </SettingItem>
-
-      <SettingItem
-        label="邮件通知"
-        description="接收学习进度和新功能通知"
-      >
-        <Toggle />
-      </SettingItem>
-
-      <div className="mt-8 border-t border-white/10 pt-8">
-        <h3 className="mb-4 font-semibold text-white">危险区域</h3>
-        <div className="space-y-4">
-          <button className="w-full rounded-lg border border-red-500/50 bg-red-500/10 px-4 py-3 text-left text-red-400 transition-all hover:bg-red-500/20">
-            <div className="font-semibold">清除所有数据</div>
-            <div className="text-sm text-red-400/70">
-              删除所有保存的词汇和学习记录
-            </div>
-          </button>
-          <button className="w-full rounded-lg border border-red-500/50 bg-red-500/10 px-4 py-3 text-left text-red-400 transition-all hover:bg-red-500/20">
-            <div className="font-semibold">删除账户</div>
-            <div className="text-sm text-red-400/70">
-              永久删除您的账户和所有数据
-            </div>
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function SettingItem({
-  label,
-  description,
+function Section({
+  title,
+  icon,
   children,
 }: {
-  label: string;
-  description: string;
+  title: string;
+  icon: string;
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex items-center justify-between gap-8 border-b border-white/5 pb-6 last:border-0">
-      <div className="flex-1">
-        <h3 className="mb-1 font-semibold text-white">{label}</h3>
-        <p className="text-sm text-white/60">{description}</p>
-      </div>
-      <div className="flex-shrink-0">{children}</div>
+    <section className="mb-6 rounded-2xl border border-white/10 bg-card p-6">
+      <h3 className="mb-4 flex items-center gap-2 text-lg font-semibold text-white">
+        <span>{icon}</span>
+        <span>{title}</span>
+      </h3>
+      {children}
+    </section>
+  );
+}
+
+function SelectRow({
+  label,
+  value,
+  onChange,
+  options,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  options: { value: string; label: string }[];
+}) {
+  return (
+    <div className="flex items-center justify-between gap-4">
+      <span className="text-sm font-semibold text-white/80">{label}</span>
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="rounded-lg border border-white/20 bg-background px-4 py-2 text-sm text-white outline-none focus:border-secondary"
+      >
+        {options.map((o) => (
+          <option key={o.value} value={o.value}>
+            {o.label}
+          </option>
+        ))}
+      </select>
     </div>
   );
 }
 
-function Toggle({ defaultChecked = false }: { defaultChecked?: boolean }) {
-  const [checked, setChecked] = useState(defaultChecked);
-
+function CheckboxRow({
+  label,
+  hint,
+  checked,
+  onChange,
+}: {
+  label: string;
+  hint?: string;
+  checked: boolean;
+  onChange: (v: boolean) => void;
+}) {
   return (
-    <button
-      onClick={() => setChecked(!checked)}
-      className={`relative h-6 w-11 rounded-full transition-colors ${
-        checked ? "bg-secondary" : "bg-white/20"
-      }`}
-    >
-      <span
-        className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition-transform ${
-          checked ? "translate-x-5" : "translate-x-0.5"
-        }`}
+    <label className="mb-3 flex cursor-pointer items-start gap-3">
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(e) => onChange(e.target.checked)}
+        className="mt-1 h-4 w-4 shrink-0 cursor-pointer"
       />
-    </button>
+      <div>
+        <div className="text-sm font-medium text-white">{label}</div>
+        {hint && <div className="mt-0.5 text-xs text-white/50">{hint}</div>}
+      </div>
+    </label>
   );
 }
