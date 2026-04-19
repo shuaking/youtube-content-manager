@@ -2,13 +2,8 @@
 
 import { useState, useRef, useEffect } from "react";
 import { ChevronRightIcon } from "@/components/icons";
-
-type Message = {
-  id: number;
-  role: "user" | "assistant";
-  content: string;
-  timestamp: Date;
-};
+import { useChat } from "@/hooks/useStore";
+import { logActivity, ChatMessage } from "@/lib/storage";
 
 const topicCards = [
   { id: "famous", label: "著名人物", icon: "🎭" },
@@ -19,76 +14,158 @@ const topicCards = [
   { id: "vocab", label: "词汇故事", icon: "📖" },
 ];
 
+const topicOpeners: Record<string, string> = {
+  famous: "Let's talk about famous people! Who would you like to learn about? For example: Steve Jobs, Marie Curie, or Leonardo da Vinci. Pick someone and I'll share an interesting fact in simple English.",
+  psychology: "Psychology is fascinating! Would you like to explore: (1) cognitive biases (2) motivation (3) emotions (4) memory? Tell me which one interests you most.",
+  games: "Games are great for language practice! What genre do you enjoy: RPG, puzzle, simulation, or multiplayer? Let's discuss your favorite.",
+  situations: "Let's practice real-life situations. Choose one: ordering food at a restaurant, asking for directions, a job interview, or booking a hotel. Which shall we start with?",
+  aria: "Hi! I'm Aria. We can chat about anything you like — your day, your hobbies, your dreams. What's on your mind?",
+  vocab: "Great, let's learn through stories! Give me a topic (travel, food, technology, nature...) and I'll craft a short story with useful vocabulary highlighted.",
+};
+
+function generateResponse(userText: string, history: ChatMessage[]): string {
+  const t = userText.toLowerCase().trim();
+
+  if (/^(hi|hello|hey|你好|哈喽)/.test(t)) {
+    return "Hi there! 👋 Great to hear from you. How would you like to practice English today — chat freely, talk about a specific topic, or practice a real-life situation?";
+  }
+  if (/(\?|吗$|what|how|why|when|where|who)/i.test(t)) {
+    return `That's a thoughtful question. Let me think...\n\nA good way to express "${userText}" in English might involve clarifying: Are you asking about a specific example, or a general pattern?\n\nTry rephrasing more specifically, and I'll give you a concrete answer with example phrases.`;
+  }
+  if (/练习|practice/.test(t)) {
+    return "Let's practice! I'll ask you three questions. Take your time answering each in English:\n\n1. What's your favorite way to spend a weekend?\n2. Describe a place you'd love to visit.\n3. What's a small habit that improved your life?\n\nAnswer whichever you like first!";
+  }
+  if (/bye|再见|拜拜/.test(t)) {
+    return "Goodbye! Great chatting with you. Come back anytime to continue practicing. 👋";
+  }
+
+  const turn = history.filter((m) => m.role === "user").length;
+  const encouragements = [
+    "Nice! Tell me more about that.",
+    "Interesting — can you give an example?",
+    "I see. What made you feel that way?",
+    "Got it! Try adding a detail or two.",
+    "Good effort! Here's a smoother way to say it: ",
+  ];
+  const tip = encouragements[turn % encouragements.length];
+
+  return `${tip}\n\nA natural way to express your idea: "${userText}" works, and you could also try:\n\n"Actually, I think ${userText.toLowerCase().replace(/\.$/, "")} because..."\n\nWant to keep going?`;
+}
+
 export default function ChatbotPage() {
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [messages, persist] = useChat();
   const [inputValue, setInputValue] = useState("");
   const [isTyping, setIsTyping] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  const recognitionRef = useRef<unknown>(null);
+  const idCounterRef = useRef(1);
+  const nextId = () => {
+    idCounterRef.current += 1;
+    return idCounterRef.current;
   };
 
   useEffect(() => {
-    scrollToBottom();
-  }, [messages]);
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, isTyping]);
 
   const handleSend = () => {
     if (!inputValue.trim()) return;
 
-    const userMessage: Message = {
-      id: messages.length + 1,
+    const userMessage: ChatMessage = {
+      id: nextId(),
       role: "user",
       content: inputValue,
-      timestamp: new Date(),
+      timestamp: new Date().toISOString(),
     };
 
-    setMessages([...messages, userMessage]);
+    const updated = [...messages, userMessage];
+    persist(updated);
+    const submitted = inputValue;
     setInputValue("");
     setIsTyping(true);
 
     setTimeout(() => {
-      const assistantMessage: Message = {
-        id: messages.length + 2,
+      const assistant: ChatMessage = {
+        id: nextId(),
         role: "assistant",
-        content: generateMockResponse(inputValue),
-        timestamp: new Date(),
+        content: generateResponse(submitted, updated),
+        timestamp: new Date().toISOString(),
       };
-      setMessages((prev) => [...prev, assistantMessage]);
+      const finalList = [...updated, assistant];
+      persist(finalList);
       setIsTyping(false);
-    }, 1500);
+
+      if (finalList.filter((m) => m.role === "user").length === 1) {
+        logActivity({
+          type: "chatbot",
+          title: "开始 Aria 对话",
+          description: submitted.slice(0, 60),
+          link: "/chatbot",
+        });
+      }
+    }, 900);
   };
 
   const handleTopicClick = (topic: string) => {
-    const topicMessages: Record<string, string> = {
-      famous: "让我们聊聊著名人物！你想了解哪位名人？",
-      psychology: "心理学是个有趣的话题！你对哪方面的心理学感兴趣？",
-      games: "游戏时间！你最喜欢玩什么类型的游戏？",
-      situations: "让我们练习一些实际情况。你想练习什么场景？",
-      aria: "嗨！我是 Aria。我们可以聊任何你想聊的话题。",
-      vocab: "让我们通过故事学习词汇！你想学习哪个主题的词汇？",
-    };
-
-    const message: Message = {
-      id: messages.length + 1,
+    const opener = topicOpeners[topic] || "Let's start a conversation!";
+    const assistant: ChatMessage = {
+      id: nextId(),
       role: "assistant",
-      content: topicMessages[topic] || "让我们开始对话吧！",
-      timestamp: new Date(),
+      content: opener,
+      timestamp: new Date().toISOString(),
     };
+    persist([assistant]);
+  };
 
-    setMessages([message]);
+  const handleClear = () => {
+    if (messages.length > 0 && !confirm("清空当前对话？")) return;
+    persist([]);
   };
 
   const handleRecordToggle = () => {
-    setIsRecording(!isRecording);
-    // 实际录音功能需要集成 Web Speech API
+    if (typeof window === "undefined") return;
+    const Recognition =
+      (window as unknown as { SpeechRecognition?: new () => unknown; webkitSpeechRecognition?: new () => unknown })
+        .SpeechRecognition ||
+      (window as unknown as { webkitSpeechRecognition?: new () => unknown }).webkitSpeechRecognition;
+    if (!Recognition) {
+      alert("您的浏览器不支持语音识别。请使用 Chrome 或 Edge。");
+      return;
+    }
+    if (isRecording) {
+      (recognitionRef.current as { stop: () => void } | null)?.stop();
+      setIsRecording(false);
+      return;
+    }
+    const rec = new (Recognition as unknown as new () => {
+      lang: string;
+      interimResults: boolean;
+      continuous: boolean;
+      onresult: (e: { results: { [index: number]: { [index: number]: { transcript: string } } } }) => void;
+      onend: () => void;
+      onerror: () => void;
+      start: () => void;
+      stop: () => void;
+    })();
+    rec.lang = "en-US";
+    rec.interimResults = false;
+    rec.continuous = false;
+    rec.onresult = (e) => {
+      const transcript = e.results[0][0].transcript;
+      setInputValue((prev) => (prev ? `${prev} ${transcript}` : transcript));
+    };
+    rec.onend = () => setIsRecording(false);
+    rec.onerror = () => setIsRecording(false);
+    rec.start();
+    recognitionRef.current = rec;
+    setIsRecording(true);
   };
 
   const handleExport = () => {
     if (messages.length === 0) return;
     const lines = messages.map((m) => {
-      const ts = m.timestamp.toISOString();
+      const ts = new Date(m.timestamp).toLocaleString("zh-CN");
       const role = m.role === "user" ? "You" : "Aria";
       return `[${ts}] ${role}:\n${m.content}\n`;
     });
@@ -104,6 +181,7 @@ export default function ChatbotPage() {
   };
 
   const handleFullscreen = () => {
+    if (typeof document === "undefined") return;
     if (!document.fullscreenElement) {
       document.documentElement.requestFullscreen().catch(() => {});
     } else {
@@ -111,13 +189,16 @@ export default function ChatbotPage() {
     }
   };
 
-  const generateMockResponse = (input: string): string => {
-    return `很好的问题！关于"${input}"，让我来帮你。\n\n在英语中，你可以这样表达：\n"That's a great question about ${input}."\n\n这是一个很自然的表达方式。你想继续练习吗？`;
+  const speakMessage = (text: string) => {
+    if (typeof window === "undefined" || !window.speechSynthesis) return;
+    const utter = new SpeechSynthesisUtterance(text);
+    utter.lang = "en-US";
+    utter.rate = 0.95;
+    window.speechSynthesis.speak(utter);
   };
 
   return (
     <main className="flex min-h-screen flex-col bg-background pt-[56px]">
-      {/* Header with Tab */}
       <section className="w-full border-b border-white/10">
         <div className="mx-auto max-w-5xl px-6">
           <div className="flex items-center gap-4 py-4">
@@ -126,17 +207,23 @@ export default function ChatbotPage() {
             </button>
             <div className="ml-auto flex gap-2">
               <button
+                onClick={handleClear}
+                disabled={messages.length === 0}
+                title="清空对话"
+                className="rounded-lg border border-white/20 px-3 py-2 text-sm text-white transition-all hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-30"
+              >
+                🗑️ 清空
+              </button>
+              <button
                 onClick={handleExport}
                 disabled={messages.length === 0}
                 title="导出对话"
-                aria-label="导出对话"
                 className="rounded-lg border border-white/20 px-3 py-2 text-sm text-white transition-all hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-30"
               >
                 <span className="mr-1">📤</span>导出
               </button>
               <button
                 title="设置"
-                aria-label="设置"
                 className="rounded-lg border border-white/20 p-2 text-white transition-all hover:bg-white/10"
               >
                 <span className="text-lg">⚙️</span>
@@ -144,7 +231,6 @@ export default function ChatbotPage() {
               <button
                 onClick={handleFullscreen}
                 title="全屏"
-                aria-label="Fullscreen"
                 className="rounded-lg border border-white/20 px-3 py-2 text-sm text-white transition-all hover:bg-white/10"
               >
                 <span className="mr-1">⛶</span>Fullscreen
@@ -154,10 +240,8 @@ export default function ChatbotPage() {
         </div>
       </section>
 
-      {/* Chat Area */}
       <section className="flex-1 overflow-hidden">
         <div className="mx-auto flex h-full max-w-5xl flex-col px-6 py-6">
-          {/* Messages or Welcome Screen */}
           {messages.length === 0 ? (
             <div className="flex flex-1 flex-col items-center justify-center">
               <div className="mb-8 text-center">
@@ -181,9 +265,7 @@ export default function ChatbotPage() {
                       className="flex flex-col items-center gap-2 rounded-xl border border-white/10 bg-card p-6 transition-all hover:border-white/20 hover:bg-white/5"
                     >
                       <span className="text-3xl">{topic.icon}</span>
-                      <span className="text-sm font-medium text-white">
-                        {topic.label}
-                      </span>
+                      <span className="text-sm font-medium text-white">{topic.label}</span>
                     </button>
                   ))}
                 </div>
@@ -195,25 +277,32 @@ export default function ChatbotPage() {
                 {messages.map((message) => (
                   <div
                     key={message.id}
-                    className={`flex ${
-                      message.role === "user" ? "justify-end" : "justify-start"
-                    }`}
+                    className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
                   >
                     <div
-                      className={`max-w-[80%] rounded-2xl px-4 py-3 ${
+                      className={`group max-w-[80%] rounded-2xl px-4 py-3 ${
                         message.role === "user"
                           ? "bg-secondary text-secondary-foreground"
                           : "border border-white/10 bg-card text-white"
                       }`}
                     >
-                      <p className="whitespace-pre-wrap text-sm leading-relaxed">
-                        {message.content}
-                      </p>
-                      <div className="mt-2 text-xs text-white/40">
-                        {message.timestamp.toLocaleTimeString("zh-CN", {
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })}
+                      <p className="whitespace-pre-wrap text-sm leading-relaxed">{message.content}</p>
+                      <div className="mt-2 flex items-center justify-between gap-3 text-xs">
+                        <span className="text-white/40">
+                          {new Date(message.timestamp).toLocaleTimeString("zh-CN", {
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })}
+                        </span>
+                        {message.role === "assistant" && (
+                          <button
+                            onClick={() => speakMessage(message.content)}
+                            className="opacity-0 transition-opacity hover:text-white group-hover:opacity-100"
+                            title="朗读"
+                          >
+                            🔊
+                          </button>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -242,7 +331,6 @@ export default function ChatbotPage() {
             </div>
           )}
 
-          {/* Input Area */}
           <div className="rounded-2xl border border-white/10 bg-card p-4">
             <div className="mb-3 flex items-center gap-3">
               <input
@@ -260,6 +348,7 @@ export default function ChatbotPage() {
               />
               <button
                 onClick={handleRecordToggle}
+                title={isRecording ? "停止录音" : "语音输入（需 Chrome/Edge）"}
                 className={`rounded-lg p-2 transition-all ${
                   isRecording
                     ? "bg-red-500 text-white"
@@ -277,7 +366,8 @@ export default function ChatbotPage() {
               </button>
             </div>
             <div className="flex items-center justify-between text-xs text-white/50">
-              <span>按 [ESC] 切换快捷键/输入模式</span>
+              <span>按 Enter 发送 · Shift+Enter 换行</span>
+              <span>对话自动保存到本地</span>
             </div>
           </div>
         </div>

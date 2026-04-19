@@ -1,13 +1,14 @@
 "use client";
 
-import { useState, useEffect, useRef, use } from "react";
-import type { ReactElement } from "react";
+import { useState, useEffect, useRef, use, useMemo } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { PlayIcon, ChevronRightIcon } from "@/components/icons";
 import { SubtitleWord, Subtitle } from "@/types/subtitles";
 import { Video } from "@/types/catalog";
 import { exportSubtitles, exportVocabulary } from "@/lib/export";
+import { useSavedWords } from "@/hooks/useStore";
+import { saveWord, unsaveWord, logActivity } from "@/lib/storage";
 
 // YouTube IFrame API types
 interface YTPlayer {
@@ -67,7 +68,11 @@ export default function PlayerPage({
   const [autoPause, setAutoPause] = useState(true);
   const [showTranslation, setShowTranslation] = useState(true);
   const [selectedWord, setSelectedWord] = useState<SubtitleWord | null>(null);
-  const [savedWords, setSavedWords] = useState<Set<string>>(new Set());
+  const [savedWordsList] = [useSavedWords()];
+  const savedWords = useMemo(
+    () => new Set(savedWordsList.map((w) => w.word.toLowerCase())),
+    [savedWordsList]
+  );
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [playerReady, setPlayerReady] = useState(false);
   const [videoDuration, setVideoDuration] = useState(0);
@@ -95,6 +100,18 @@ export default function PlayerPage({
   // Fetch video info from catalog API
   const [videoInfo, setVideoInfo] = useState<Video | null>(null);
   const [relatedVideos, setRelatedVideos] = useState<Video[]>([]);
+
+  useEffect(() => {
+    if (!videoInfo) return;
+    logActivity({
+      type: "video",
+      title: videoInfo.title,
+      description: `观看 ${videoInfo.channelName}`,
+      link: `/player/${videoInfo.id}`,
+      thumbnail: videoInfo.thumbnail,
+      metadata: { duration: videoInfo.duration },
+    });
+  }, [videoInfo?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     let cancelled = false;
@@ -505,7 +522,7 @@ export default function PlayerPage({
   };
 
   const getWordDifficultyStyle = (word: SubtitleWord) => {
-    const isSaved = word.saved || savedWords.has(word.text);
+    const isSaved = word.saved || savedWords.has(word.text.toLowerCase());
 
     if (!word.difficulty) {
       return isSaved ? "cursor-pointer rounded bg-secondary/30 px-1 hover:bg-secondary/50" : "";
@@ -552,14 +569,25 @@ export default function PlayerPage({
   };
 
   const handleSaveWord = (word: SubtitleWord) => {
-    setSavedWords((prev) => {
-      const newSet = new Set(prev);
-      if (newSet.has(word.text)) {
-        newSet.delete(word.text);
-      } else {
-        newSet.add(word.text);
-      }
-      return newSet;
+    const key = word.text.toLowerCase();
+    if (savedWords.has(key)) {
+      unsaveWord(word.text);
+      return;
+    }
+    saveWord({
+      word: word.text,
+      translation: word.translation || "",
+      definition: word.definition || "",
+      difficulty: word.difficulty || "intermediate",
+      examples: currentSubtitle
+        ? [
+            {
+              text: currentSubtitle.originalText,
+              translation: currentSubtitle.translatedText || "",
+              source: videoTitle,
+            },
+          ]
+        : [],
     });
   };
 
@@ -667,9 +695,9 @@ export default function PlayerPage({
   // Calculate vocabulary statistics
   const allWords = subtitles.flatMap(s => s.words || []);
   const savedWordsCount = savedWords.size;
-  const beginnerWords = allWords.filter(w => w.difficulty === "beginner" && (w.saved || savedWords.has(w.text))).length;
-  const intermediateWords = allWords.filter(w => w.difficulty === "intermediate" && (w.saved || savedWords.has(w.text))).length;
-  const advancedWords = allWords.filter(w => w.difficulty === "advanced" && (w.saved || savedWords.has(w.text))).length;
+  const beginnerWords = allWords.filter(w => w.difficulty === "beginner" && (w.saved || savedWords.has(w.text.toLowerCase()))).length;
+  const intermediateWords = allWords.filter(w => w.difficulty === "intermediate" && (w.saved || savedWords.has(w.text.toLowerCase()))).length;
+  const advancedWords = allWords.filter(w => w.difficulty === "advanced" && (w.saved || savedWords.has(w.text.toLowerCase()))).length;
 
   const handleExportSubtitles = (format: "csv" | "json") => {
     exportSubtitles(subtitles, format, videoTitle);
@@ -682,7 +710,7 @@ export default function PlayerPage({
       translation: word.translation || "",
       difficulty: word.difficulty || "intermediate",
       definition: word.definition || "",
-      saved: word.saved || savedWords.has(word.text),
+      saved: word.saved || savedWords.has(word.text.toLowerCase()),
     }));
     exportVocabulary(vocabulary, format, videoTitle);
     setShowExportMenu(false);
@@ -1413,12 +1441,12 @@ export default function PlayerPage({
               <button
                 onClick={() => handleSaveWord(dictionaryWord)}
                 className={`flex-1 rounded-lg px-6 py-3 font-semibold transition-all ${
-                  savedWords.has(dictionaryWord.text)
+                  savedWords.has(dictionaryWord.text.toLowerCase())
                     ? "border border-white/20 text-white hover:bg-white/10"
                     : "bg-secondary text-secondary-foreground hover:opacity-90"
                 }`}
               >
-                {savedWords.has(dictionaryWord.text)
+                {savedWords.has(dictionaryWord.text.toLowerCase())
                   ? "✓ 已保存"
                   : "保存到词汇表"}
               </button>

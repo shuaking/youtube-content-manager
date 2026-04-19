@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
 import { languages } from "@/types/catalog";
+import { useSettings } from "@/hooks/useStore";
 
 const uiLanguages = [
   { value: "zh-CN", label: "中文（简体）" },
@@ -15,16 +15,7 @@ const uiLanguages = [
 ];
 
 export default function SettingsPage() {
-  const [learningLang, setLearningLang] = useState("en");
-  const [translationLang, setTranslationLang] = useState("zh-CN");
-  const [uiLang, setUiLang] = useState("zh-CN");
-  const [showMiniDict, setShowMiniDict] = useState(true);
-  const [speakOnClick, setSpeakOnClick] = useState(true);
-  const [customDictUrl, setCustomDictUrl] = useState("");
-  const [autoPause, setAutoPause] = useState(true);
-  const [hideSubtitles, setHideSubtitles] = useState(false);
-  const [smartHighlight, setSmartHighlight] = useState(true);
-  const [showFurigana, setShowFurigana] = useState(false);
+  const [settings, update] = useSettings();
 
   return (
     <main className="min-h-screen bg-background pt-[56px]">
@@ -35,6 +26,14 @@ export default function SettingsPage() {
             <p className="text-white/70">自定义您的 Language Reactor 体验</p>
           </div>
           <button
+            onClick={() => {
+              if (typeof document === "undefined") return;
+              if (!document.fullscreenElement) {
+                document.documentElement.requestFullscreen().catch(() => {});
+              } else {
+                document.exitFullscreen().catch(() => {});
+              }
+            }}
             className="rounded-lg border border-white/20 px-3 py-2 text-sm text-white transition-all hover:bg-white/10"
             title="全屏"
           >
@@ -42,7 +41,6 @@ export default function SettingsPage() {
           </button>
         </div>
 
-        {/* App Installation */}
         <Section title="App Installation" icon="📲">
           <p className="mb-3 text-sm leading-relaxed text-white/70">
             Install Language Reactor on your device for a faster, full-screen experience with easy access from your home screen or desktop. To install, open your browser menu and select &quot;Install app&quot; or &quot;Add to Home Screen&quot;.
@@ -53,7 +51,6 @@ export default function SettingsPage() {
           </div>
         </Section>
 
-        {/* Account Info */}
         <Section title="账户信息" icon="👤">
           <div className="flex items-center justify-between">
             <div>
@@ -66,25 +63,23 @@ export default function SettingsPage() {
           </div>
         </Section>
 
-        {/* Basic Settings */}
         <Section title="基本设置" icon="⚙️">
           <div className="space-y-4">
             <SelectRow
               label="学习语言"
-              value={learningLang}
-              onChange={setLearningLang}
+              value={settings.learningLang}
+              onChange={(v) => update({ learningLang: v })}
               options={languages.map((l) => ({ value: l.code, label: `${l.flag} ${l.nativeName}` }))}
             />
             <SelectRow
               label="翻译语言"
-              value={translationLang}
-              onChange={setTranslationLang}
+              value={settings.translationLang}
+              onChange={(v) => update({ translationLang: v })}
               options={uiLanguages}
             />
           </div>
         </Section>
 
-        {/* Vocabulary Marking */}
         <Section title="词汇标记" icon="🖍️">
           <p className="mb-3 text-sm text-white/60">
             智能高亮和难度标记，登录后自动同步学习进度
@@ -92,25 +87,24 @@ export default function SettingsPage() {
           <CheckboxRow
             label="智能高亮已保存词汇"
             hint="识别复数、动词变位等词形变化"
-            checked={smartHighlight}
-            onChange={setSmartHighlight}
+            checked={settings.smartHighlight}
+            onChange={(v) => update({ smartHighlight: v })}
           />
           <button className="mt-3 rounded-lg border border-white/20 px-4 py-2 text-sm font-semibold text-white transition-all hover:bg-white/10">
             登录以启用更多词汇功能
           </button>
         </Section>
 
-        {/* Dictionary */}
         <Section title="词典" icon="📖">
           <CheckboxRow
             label="显示迷你词典"
-            checked={showMiniDict}
-            onChange={setShowMiniDict}
+            checked={settings.showMiniDict}
+            onChange={(v) => update({ showMiniDict: v })}
           />
           <CheckboxRow
             label="单击时朗读单词"
-            checked={speakOnClick}
-            onChange={setSpeakOnClick}
+            checked={settings.speakOnClick}
+            onChange={(v) => update({ speakOnClick: v })}
           />
           <div className="mt-4">
             <label className="mb-2 block text-sm font-semibold text-white/80">
@@ -119,8 +113,8 @@ export default function SettingsPage() {
             <input
               type="text"
               placeholder="http://www.example.com?q=WORD"
-              value={customDictUrl}
-              onChange={(e) => setCustomDictUrl(e.target.value)}
+              value={settings.customDictUrl}
+              onChange={(e) => update({ customDictUrl: e.target.value })}
               className="w-full rounded-lg border border-white/10 bg-background px-4 py-2 text-sm text-white placeholder-white/40 outline-none transition-all focus:border-white/20 focus:ring-2 focus:ring-secondary/50"
             />
             <p className="mt-2 text-xs text-white/50">
@@ -129,39 +123,37 @@ export default function SettingsPage() {
           </div>
         </Section>
 
-        {/* Subtitles & Playback */}
         <Section title="字幕与播放" icon="🎬">
           <CheckboxRow
             label="字幕后自动暂停"
             hint="播放到每条字幕结尾时自动暂停"
-            checked={autoPause}
-            onChange={setAutoPause}
+            checked={settings.autoPause}
+            onChange={(v) => update({ autoPause: v })}
           />
           <CheckboxRow
             label="默认隐藏字幕"
             hint="鼠标悬停时显示，训练听力"
-            checked={hideSubtitles}
-            onChange={setHideSubtitles}
+            checked={settings.hideSubtitles}
+            onChange={(v) => update({ hideSubtitles: v })}
           />
           <CheckboxRow
             label="显示注音（假名/拼音）"
             hint="为使用不同书写系统的语言显示发音"
-            checked={showFurigana}
-            onChange={setShowFurigana}
+            checked={settings.showFurigana}
+            onChange={(v) => update({ showFurigana: v })}
           />
         </Section>
 
-        {/* Other Options */}
         <Section title="其他选项" icon="🌐">
           <SelectRow
             label="UI Language / 界面语言"
-            value={uiLang}
-            onChange={setUiLang}
+            value={settings.uiLang}
+            onChange={(v) => update({ uiLang: v })}
             options={uiLanguages}
           />
           <div className="mt-4 flex items-center gap-3">
             <a
-              href="https://github.com/anthropics/claude-code/releases"
+              href="https://github.com/shuaking/youtube-content-manager/releases"
               target="_blank"
               rel="noopener noreferrer"
               className="text-sm text-secondary hover:underline"
@@ -170,6 +162,50 @@ export default function SettingsPage() {
             </a>
             <span className="text-white/30">•</span>
             <span className="text-sm text-white/60">版本 0.3.1</span>
+          </div>
+        </Section>
+
+        <Section title="数据管理" icon="🗃️">
+          <p className="mb-4 text-sm text-white/60">
+            所有学习数据（词汇、历史、设置、聊天）存储在本地浏览器的 localStorage 中。
+          </p>
+          <div className="flex flex-wrap gap-3">
+            <button
+              onClick={() => {
+                const data = {
+                  savedWords: JSON.parse(localStorage.getItem("lr.savedWords") || "[]"),
+                  history: JSON.parse(localStorage.getItem("lr.history") || "[]"),
+                  settings: JSON.parse(localStorage.getItem("lr.settings") || "{}"),
+                  chat: JSON.parse(localStorage.getItem("lr.chat") || "[]"),
+                };
+                const blob = new Blob([JSON.stringify(data, null, 2)], {
+                  type: "application/json",
+                });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = `language-reactor-backup-${Date.now()}.json`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+              }}
+              className="rounded-lg bg-secondary px-4 py-2 text-sm font-semibold text-secondary-foreground transition-all hover:opacity-90"
+            >
+              导出所有数据
+            </button>
+            <button
+              onClick={() => {
+                if (!confirm("确定清除所有本地数据吗？此操作不可撤销。")) return;
+                ["lr.savedWords", "lr.history", "lr.settings", "lr.chat"].forEach((k) =>
+                  localStorage.removeItem(k)
+                );
+                location.reload();
+              }}
+              className="rounded-lg border border-red-500/50 bg-red-500/10 px-4 py-2 text-sm font-semibold text-red-400 transition-all hover:bg-red-500/20"
+            >
+              清除所有数据
+            </button>
           </div>
         </Section>
       </div>
