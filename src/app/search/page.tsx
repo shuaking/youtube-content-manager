@@ -5,7 +5,8 @@ import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import { SearchIcon } from "@/components/icons";
-import { searchContent, SearchResult } from "@/types/search";
+import { searchContent, SearchResult, staticSearchResults } from "@/types/search";
+import { Video, Channel } from "@/types/catalog";
 
 function SearchContent() {
   const searchParams = useSearchParams();
@@ -14,22 +15,66 @@ function SearchContent() {
   const [query, setQuery] = useState(initialQuery);
   const [activeFilters, setActiveFilters] = useState<string[]>([]);
   const [results, setResults] = useState<SearchResult[]>([]);
-  const [isSearching, setIsSearching] = useState(false);
+  const [isSearching, setIsSearching] = useState(() => Boolean(initialQuery.trim()));
+  const [catalogIndex, setCatalogIndex] = useState<SearchResult[]>([]);
+
+  // Build index from catalog API + static entries
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const [vRes, cRes] = await Promise.all([
+          fetch("/api/catalog/videos"),
+          fetch("/api/catalog/channels"),
+        ]);
+        const { videos = [] }: { videos: Video[] } = vRes.ok ? await vRes.json() : { videos: [] };
+        const { channels = [] }: { channels: Channel[] } = cRes.ok ? await cRes.json() : { channels: [] };
+        if (cancelled) return;
+
+        const channelLookup = new Map(channels.map((c) => [c.id, c]));
+        const videoEntries: SearchResult[] = videos.map((v) => {
+          const ch = channelLookup.get(v.channelId);
+          const lang = ch?.language ?? "en";
+          const platform = ch?.platform ?? "youtube";
+          return {
+            id: `video-${v.id}`,
+            type: "video",
+            title: v.title,
+            description: v.description,
+            thumbnail: v.thumbnail,
+            link: `/catalog/${lang}/${platform}/video/${v.id}`,
+            metadata: { views: v.views, difficulty: v.difficulty },
+          };
+        });
+        const channelEntries: SearchResult[] = channels.map((c) => ({
+          id: `channel-${c.id}`,
+          type: "channel",
+          title: c.name,
+          description: c.description,
+          thumbnail: c.thumbnail,
+          link: `/catalog/${c.language}/${c.platform}/channel/${c.id}`,
+          metadata: { subscribers: c.subscriberCount },
+        }));
+
+        setCatalogIndex([...videoEntries, ...channelEntries, ...staticSearchResults]);
+      } catch {
+        if (!cancelled) setCatalogIndex([...staticSearchResults]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
-    if (query.trim()) {
-      setIsSearching(true);
-      // Simulate search delay
-      const timer = setTimeout(() => {
-        const searchResults = searchContent(query, activeFilters);
-        setResults(searchResults);
-        setIsSearching(false);
-      }, 300);
-      return () => clearTimeout(timer);
-    } else {
-      setResults([]);
-    }
-  }, [query, activeFilters]);
+    const trimmed = query.trim();
+    if (!trimmed) return;
+    const timer = setTimeout(() => {
+      setResults(searchContent(trimmed, catalogIndex, activeFilters));
+      setIsSearching(false);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [query, activeFilters, catalogIndex]);
 
   const filterOptions = [
     { id: "video", label: "视频", icon: "🎬" },
@@ -44,6 +89,7 @@ function SearchContent() {
         ? prev.filter((f) => f !== filterId)
         : [...prev, filterId]
     );
+    if (query.trim()) setIsSearching(true);
   };
 
   const getResultIcon = (type: string) => {
@@ -83,7 +129,11 @@ function SearchContent() {
               type="text"
               placeholder="搜索视频、频道、词汇或文章..."
               value={query}
-              onChange={(e) => setQuery(e.target.value)}
+              onChange={(e) => {
+                const v = e.target.value;
+                setQuery(v);
+                setIsSearching(Boolean(v.trim()));
+              }}
               autoFocus
               className="w-full rounded-xl border border-white/10 bg-card py-4 pl-14 pr-4 text-lg text-white placeholder-white/40 outline-none transition-all focus:border-white/20 focus:ring-2 focus:ring-secondary/50"
             />

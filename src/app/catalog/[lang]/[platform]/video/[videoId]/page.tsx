@@ -4,8 +4,8 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import { PlayIcon } from "@/components/icons";
-import { mockVideos, mockChannels } from "@/types/catalog";
-import { use } from "react";
+import { Video, Channel } from "@/types/catalog";
+import { use, useEffect, useState } from "react";
 
 export default function VideoDetailPage({
   params,
@@ -13,16 +13,57 @@ export default function VideoDetailPage({
   params: Promise<{ lang: string; platform: string; videoId: string }>;
 }) {
   const { lang, platform, videoId } = use(params);
-  const video = mockVideos.find((v) => v.id === videoId);
-  const channel = video ? mockChannels.find((c) => c.id === video.channelId) : null;
+  const [video, setVideo] = useState<Video | null>(null);
+  const [channel, setChannel] = useState<Channel | null>(null);
+  const [relatedVideos, setRelatedVideos] = useState<Video[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [missing, setMissing] = useState(false);
 
-  if (!video || !channel) {
-    notFound();
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const [vRes, cRes] = await Promise.all([
+          fetch("/api/catalog/videos"),
+          fetch("/api/catalog/channels"),
+        ]);
+        const { videos = [] }: { videos: Video[] } = vRes.ok ? await vRes.json() : { videos: [] };
+        const { channels = [] }: { channels: Channel[] } = cRes.ok ? await cRes.json() : { channels: [] };
+        if (cancelled) return;
+
+        const v = videos.find((x) => x.id === videoId);
+        if (!v) {
+          setMissing(true);
+          return;
+        }
+        const c = channels.find((x) => x.id === v.channelId) ?? null;
+        setVideo(v);
+        setChannel(c);
+        setRelatedVideos(videos.filter((x) => x.channelId === v.channelId && x.id !== videoId));
+      } catch {
+        if (!cancelled) setMissing(true);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [videoId]);
+
+  if (loading) {
+    return (
+      <main className="min-h-screen bg-background pt-[56px]">
+        <div className="mx-auto max-w-7xl px-6 py-20 text-center text-white/60">
+          加载中...
+        </div>
+      </main>
+    );
   }
 
-  const relatedVideos = mockVideos.filter(
-    (v) => v.channelId === video.channelId && v.id !== video.id
-  );
+  if (missing || !video) {
+    notFound();
+  }
 
   return (
     <main className="min-h-screen bg-background pt-[56px]">
@@ -40,13 +81,17 @@ export default function VideoDetailPage({
             >
               {lang.toUpperCase()}
             </Link>
-            <span>/</span>
-            <Link
-              href={`/catalog/${lang}/${platform}/channel/${channel.id}`}
-              className="hover:text-white"
-            >
-              {channel.name}
-            </Link>
+            {channel && (
+              <>
+                <span>/</span>
+                <Link
+                  href={`/catalog/${lang}/${platform}/channel/${channel.id}`}
+                  className="hover:text-white"
+                >
+                  {channel.name}
+                </Link>
+              </>
+            )}
             <span>/</span>
             <span className="text-white">视频</span>
           </div>
@@ -148,33 +193,35 @@ export default function VideoDetailPage({
               </div>
 
               {/* Channel Info */}
-              <div className="rounded-2xl border border-white/10 bg-card p-6">
-                <Link
-                  href={`/catalog/${lang}/${platform}/channel/${channel.id}`}
-                  className="group flex items-center gap-4"
-                >
-                  <div className="relative h-16 w-16 flex-shrink-0 overflow-hidden rounded-full">
-                    <Image
-                      src={channel.thumbnail}
-                      alt={channel.name}
-                      fill
-                      className="object-cover"
-                      sizes="64px"
-                    />
-                  </div>
-                  <div className="flex-1">
-                    <h3 className="mb-1 font-semibold text-white group-hover:text-secondary">
-                      {channel.name}
-                    </h3>
-                    <p className="text-sm text-white/60">
-                      {channel.subscriberCount} 订阅者
-                    </p>
-                  </div>
-                  <button className="rounded-lg bg-secondary px-4 py-2 text-sm font-semibold text-secondary-foreground transition-all hover:opacity-90">
-                    查看频道
-                  </button>
-                </Link>
-              </div>
+              {channel && (
+                <div className="rounded-2xl border border-white/10 bg-card p-6">
+                  <Link
+                    href={`/catalog/${lang}/${platform}/channel/${channel.id}`}
+                    className="group flex items-center gap-4"
+                  >
+                    <div className="relative h-16 w-16 flex-shrink-0 overflow-hidden rounded-full">
+                      <Image
+                        src={channel.thumbnail}
+                        alt={channel.name}
+                        fill
+                        className="object-cover"
+                        sizes="64px"
+                      />
+                    </div>
+                    <div className="flex-1">
+                      <h3 className="mb-1 font-semibold text-white group-hover:text-secondary">
+                        {channel.name}
+                      </h3>
+                      <p className="text-sm text-white/60">
+                        {channel.subscriberCount} 订阅者
+                      </p>
+                    </div>
+                    <button className="rounded-lg bg-secondary px-4 py-2 text-sm font-semibold text-secondary-foreground transition-all hover:opacity-90">
+                      查看频道
+                    </button>
+                  </Link>
+                </div>
+              )}
             </div>
 
             {/* Sidebar - Related Videos */}

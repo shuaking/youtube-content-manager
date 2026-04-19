@@ -6,7 +6,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { PlayIcon, ChevronRightIcon } from "@/components/icons";
 import { SubtitleWord, Subtitle } from "@/types/subtitles";
-import { mockVideos } from "@/types/catalog";
+import { Video } from "@/types/catalog";
 import { exportSubtitles, exportVocabulary } from "@/lib/export";
 
 // YouTube IFrame API types
@@ -92,15 +92,32 @@ export default function PlayerPage({
   const videoInfoPanelRef = useRef<HTMLDivElement>(null);
   const dictionaryModalRef = useRef<HTMLDivElement>(null);
 
-  // Find video info from catalog
-  const videoInfo = mockVideos.find((v) => v.id === videoId);
+  // Fetch video info from catalog API
+  const [videoInfo, setVideoInfo] = useState<Video | null>(null);
+  const [relatedVideos, setRelatedVideos] = useState<Video[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/catalog/videos");
+        if (!res.ok) return;
+        const { videos = [] }: { videos: Video[] } = await res.json();
+        if (cancelled) return;
+        const current = videos.find((v) => v.id === videoId) ?? null;
+        setVideoInfo(current);
+        setRelatedVideos(current ? videos.filter((v) => v.channelId === current.channelId) : []);
+      } catch {
+        // Silent fail — player still works without catalog metadata
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [videoId]);
+
   const videoTitle = videoInfo?.title || "视频播放器";
   const channelName = videoInfo?.channelName || "";
-
-  // Get related videos from the same channel
-  const relatedVideos = videoInfo
-    ? mockVideos.filter((v) => v.channelId === videoInfo.channelId)
-    : [];
 
   // Find current video index in related videos
   const currentVideoIndex = relatedVideos.findIndex((v) => v.id === videoId);

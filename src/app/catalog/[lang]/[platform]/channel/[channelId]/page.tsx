@@ -3,8 +3,8 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
-import { mockChannels, mockVideos } from "@/types/catalog";
-import { use } from "react";
+import { Video, Channel } from "@/types/catalog";
+import { use, useEffect, useState } from "react";
 
 export default function ChannelDetailPage({
   params,
@@ -12,13 +12,54 @@ export default function ChannelDetailPage({
   params: Promise<{ lang: string; platform: string; channelId: string }>;
 }) {
   const { lang, platform, channelId } = use(params);
-  const channel = mockChannels.find((c) => c.id === channelId);
+  const [channel, setChannel] = useState<Channel | null>(null);
+  const [channelVideos, setChannelVideos] = useState<Video[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [missing, setMissing] = useState(false);
 
-  if (!channel) {
-    notFound();
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const [vRes, cRes] = await Promise.all([
+          fetch("/api/catalog/videos"),
+          fetch("/api/catalog/channels"),
+        ]);
+        const { videos = [] }: { videos: Video[] } = vRes.ok ? await vRes.json() : { videos: [] };
+        const { channels = [] }: { channels: Channel[] } = cRes.ok ? await cRes.json() : { channels: [] };
+        if (cancelled) return;
+
+        const c = channels.find((x) => x.id === channelId);
+        if (!c) {
+          setMissing(true);
+          return;
+        }
+        setChannel(c);
+        setChannelVideos(videos.filter((v) => v.channelId === channelId));
+      } catch {
+        if (!cancelled) setMissing(true);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [channelId]);
+
+  if (loading) {
+    return (
+      <main className="min-h-screen bg-background pt-[56px]">
+        <div className="mx-auto max-w-7xl px-6 py-20 text-center text-white/60">
+          加载中...
+        </div>
+      </main>
+    );
   }
 
-  const channelVideos = mockVideos.filter((v) => v.channelId === channelId);
+  if (missing || !channel) {
+    notFound();
+  }
 
   return (
     <main className="min-h-screen bg-background pt-[56px]">

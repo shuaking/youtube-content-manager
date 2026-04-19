@@ -13,7 +13,6 @@ export default function CatalogPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [viewMode, setViewMode] = useState<"channels" | "videos">("videos");
   const [selectedChannel, setSelectedChannel] = useState<string | null>(null);
-  const [vocabularyLevel, setVocabularyLevel] = useState<[number, number]>([0, 15]);
   const [durationRange, setDurationRange] = useState<[number, number]>([0, 120]);
   const [sortBy, setSortBy] = useState<"date" | "views">("date");
 
@@ -192,22 +191,9 @@ export default function CatalogPage() {
           </div>
 
           {/* Advanced Filters */}
-          <div className="mb-6 grid gap-6 md:grid-cols-2">
-            {/* Vocabulary Level */}
-            <div>
-              <h3 className="mb-3 text-sm font-semibold text-white/80">词汇水平</h3>
-              <DualRangeSlider
-                min={0}
-                max={15}
-                step={1}
-                value={vocabularyLevel}
-                onChange={setVocabularyLevel}
-                formatLabel={(v) => `Level ${v}`}
-              />
-            </div>
-
+          <div className="mb-6">
             {/* Duration */}
-            <div>
+            <div className="max-w-md">
               <h3 className="mb-3 text-sm font-semibold text-white/80">视频时长</h3>
               <DualRangeSlider
                 min={0}

@@ -100,7 +100,7 @@ export async function getVideosByChannel(channelId: string): Promise<Video[]> {
     const { data, error } = await supabase
       .from('videos')
       .select('*')
-      .eq('channel_id', channelId)
+      .eq('channelId', channelId)
       .order('created_at', { ascending: false });
 
     if (error) throw error;
