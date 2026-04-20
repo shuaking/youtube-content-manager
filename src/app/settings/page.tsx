@@ -90,9 +90,32 @@ export default function SettingsPage() {
             checked={settings.smartHighlight}
             onChange={(v) => update({ smartHighlight: v })}
           />
-          <button className="mt-3 rounded-lg border border-white/20 px-4 py-2 text-sm font-semibold text-white transition-all hover:bg-white/10">
-            登录以启用更多词汇功能
-          </button>
+          <CheckboxRow
+            label="学习阶段颜色下划线"
+            hint="在视频和文本中为每个词按阶段显示颜色下划线（可能增加视觉噪音）"
+            checked={settings.colorUnderlines}
+            onChange={(v) => update({ colorUnderlines: v })}
+          />
+          <div className="mt-4">
+            <label className="mb-2 block text-sm font-semibold text-white/80">
+              词汇量基线
+            </label>
+            <div className="flex items-center gap-3">
+              <input
+                type="number"
+                min={500}
+                max={30000}
+                step={500}
+                value={settings.vocabSize}
+                onChange={(e) => update({ vocabSize: Number(e.target.value) })}
+                className="w-32 rounded-lg border border-white/10 bg-background px-4 py-2 text-sm text-white outline-none transition-all focus:border-white/20 focus:ring-2 focus:ring-secondary/50"
+              />
+              <span className="text-sm text-white/60">个单词</span>
+            </div>
+            <p className="mt-2 text-xs text-white/50">
+              您大概已知的词汇量，用于自动判断哪些词值得提醒您学习。
+            </p>
+          </div>
         </Section>
 
         <Section title="词典" icon="📖">
@@ -141,6 +164,18 @@ export default function SettingsPage() {
             hint="为使用不同书写系统的语言显示发音"
             checked={settings.showFurigana}
             onChange={(v) => update({ showFurigana: v })}
+          />
+          <CheckboxRow
+            label="显示机器翻译"
+            hint="侧重字面含义，帮助理解句型"
+            checked={settings.showMachineTranslation}
+            onChange={(v) => update({ showMachineTranslation: v })}
+          />
+          <CheckboxRow
+            label="显示人工翻译"
+            hint="准确表达习语和文化语境"
+            checked={settings.showHumanTranslation}
+            onChange={(v) => update({ showHumanTranslation: v })}
           />
         </Section>
 

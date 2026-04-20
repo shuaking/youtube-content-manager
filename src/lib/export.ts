@@ -87,11 +87,53 @@ export function downloadFile(content: string, filename: string, mimeType: string
 }
 
 /**
+ * Convert subtitles to SRT format
+ */
+function formatSrtTime(seconds: number): string {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = Math.floor(seconds % 60);
+  const ms = Math.floor((seconds - Math.floor(seconds)) * 1000);
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")},${String(ms).padStart(3, "0")}`;
+}
+
+function formatVttTime(seconds: number): string {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = Math.floor(seconds % 60);
+  const ms = Math.floor((seconds - Math.floor(seconds)) * 1000);
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}.${String(ms).padStart(3, "0")}`;
+}
+
+export function exportSubtitlesToSRT(subtitles: Subtitle[]): string {
+  return subtitles
+    .map((sub, idx) => {
+      const body = sub.translatedText
+        ? `${sub.originalText}\n${sub.translatedText}`
+        : sub.originalText;
+      return `${idx + 1}\n${formatSrtTime(sub.startTime)} --> ${formatSrtTime(sub.endTime)}\n${body}\n`;
+    })
+    .join("\n");
+}
+
+export function exportSubtitlesToVTT(subtitles: Subtitle[]): string {
+  const entries = subtitles
+    .map((sub, idx) => {
+      const body = sub.translatedText
+        ? `${sub.originalText}\n${sub.translatedText}`
+        : sub.originalText;
+      return `${idx + 1}\n${formatVttTime(sub.startTime)} --> ${formatVttTime(sub.endTime)}\n${body}\n`;
+    })
+    .join("\n");
+  return `WEBVTT\n\n${entries}`;
+}
+
+/**
  * Export subtitles with automatic filename and format
  */
 export function exportSubtitles(
   subtitles: Subtitle[],
-  format: "csv" | "json",
+  format: "csv" | "json" | "srt" | "vtt",
   videoTitle: string = "subtitles"
 ) {
   const sanitizedTitle = videoTitle.replace(/[^a-z0-9]/gi, "_").toLowerCase();
@@ -104,9 +146,15 @@ export function exportSubtitles(
   if (format === "csv") {
     content = exportSubtitlesToCSV(subtitles);
     mimeType = "text/csv;charset=utf-8;";
-  } else {
+  } else if (format === "json") {
     content = exportSubtitlesToJSON(subtitles);
     mimeType = "application/json;charset=utf-8;";
+  } else if (format === "srt") {
+    content = exportSubtitlesToSRT(subtitles);
+    mimeType = "text/plain;charset=utf-8;";
+  } else {
+    content = exportSubtitlesToVTT(subtitles);
+    mimeType = "text/vtt;charset=utf-8;";
   }
 
   downloadFile(content, filename, mimeType);

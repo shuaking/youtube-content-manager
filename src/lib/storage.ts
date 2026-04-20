@@ -1,11 +1,16 @@
 "use client";
 
+export type WordStage = "known" | "learning" | "ignore" | "uncommon";
+export type WordTag = "none" | "red" | "green" | "yellow" | "blue";
+
 export interface SavedWord {
   word: string;
   translation: string;
   definition?: string;
   partOfSpeech?: string;
   difficulty: "beginner" | "intermediate" | "advanced";
+  stage: WordStage;
+  tag: WordTag;
   examples: { text: string; translation: string; source: string }[];
   savedDate: string;
   reviewCount: number;
@@ -18,6 +23,18 @@ export interface SavedWord {
     lastReviewDate: string;
   };
   reviewHistory: { date: string; rating: "again" | "hard" | "good" | "easy" }[];
+}
+
+export interface SavedPhrase {
+  id: string;
+  text: string;
+  translation: string;
+  source: string;
+  videoId?: string;
+  subtitleId?: number;
+  startTime?: number;
+  savedDate: string;
+  tag: WordTag;
 }
 
 export interface HistoryEntry {
@@ -42,6 +59,10 @@ export interface UserSettings {
   hideSubtitles: boolean;
   smartHighlight: boolean;
   showFurigana: boolean;
+  vocabSize: number;
+  colorUnderlines: boolean;
+  showMachineTranslation: boolean;
+  showHumanTranslation: boolean;
 }
 
 export interface ChatMessage {
@@ -53,15 +74,17 @@ export interface ChatMessage {
 
 const KEYS = {
   savedWords: "lr.savedWords",
+  savedPhrases: "lr.savedPhrases",
   history: "lr.history",
   settings: "lr.settings",
   chat: "lr.chat",
 } as const;
 
-type Topic = "savedWords" | "history" | "settings" | "chat";
+type Topic = "savedWords" | "savedPhrases" | "history" | "settings" | "chat";
 
 const listeners: Record<Topic, Set<() => void>> = {
   savedWords: new Set(),
+  savedPhrases: new Set(),
   history: new Set(),
   settings: new Set(),
   chat: new Set(),
@@ -69,11 +92,13 @@ const listeners: Record<Topic, Set<() => void>> = {
 
 const cache: {
   savedWords: SavedWord[] | null;
+  savedPhrases: SavedPhrase[] | null;
   history: HistoryEntry[] | null;
   settings: UserSettings | null;
   chat: ChatMessage[] | null;
 } = {
   savedWords: null,
+  savedPhrases: null,
   history: null,
   settings: null,
   chat: null,
@@ -138,6 +163,8 @@ export function saveWord(
     definition: input.definition || "",
     partOfSpeech: input.partOfSpeech || "",
     difficulty: input.difficulty || "intermediate",
+    stage: input.stage || "learning",
+    tag: input.tag || "none",
     examples: input.examples || [],
     savedDate: now,
     reviewCount: 0,
@@ -171,6 +198,68 @@ export function updateSavedWord(word: string, patch: Partial<SavedWord>): void {
   if (idx === -1) return;
   all[idx] = { ...all[idx], ...patch };
   writeSavedWords(all);
+}
+
+export function bulkUpdateStage(words: string[], stage: WordStage): void {
+  if (words.length === 0) return;
+  const set = new Set(words.map((w) => w.toLowerCase()));
+  const all = readSavedWords();
+  const updated = all.map((w) => (set.has(w.word.toLowerCase()) ? { ...w, stage } : w));
+  writeSavedWords(updated);
+}
+
+export function bulkUpdateTag(words: string[], tag: WordTag): void {
+  if (words.length === 0) return;
+  const set = new Set(words.map((w) => w.toLowerCase()));
+  const all = readSavedWords();
+  const updated = all.map((w) => (set.has(w.word.toLowerCase()) ? { ...w, tag } : w));
+  writeSavedWords(updated);
+}
+
+// Saved Phrases
+export function readSavedPhrases(): SavedPhrase[] {
+  if (cache.savedPhrases) return cache.savedPhrases;
+  const data = read<SavedPhrase[]>(KEYS.savedPhrases, []);
+  cache.savedPhrases = data;
+  return data;
+}
+
+function writeSavedPhrases(phrases: SavedPhrase[]): void {
+  write(KEYS.savedPhrases, phrases);
+  cache.savedPhrases = phrases;
+  notify("savedPhrases");
+}
+
+export function savePhrase(input: Omit<SavedPhrase, "id" | "savedDate" | "tag"> & { tag?: WordTag }): SavedPhrase {
+  const all = readSavedPhrases();
+  const existing = all.find(
+    (p) => p.text.trim() === input.text.trim() && p.videoId === input.videoId
+  );
+  if (existing) return existing;
+  const now = new Date().toISOString();
+  const phrase: SavedPhrase = {
+    id: `p_${now}_${Math.random().toString(36).slice(2, 6)}`,
+    text: input.text,
+    translation: input.translation,
+    source: input.source,
+    videoId: input.videoId,
+    subtitleId: input.subtitleId,
+    startTime: input.startTime,
+    savedDate: now,
+    tag: input.tag || "none",
+  };
+  writeSavedPhrases([...all, phrase]);
+  return phrase;
+}
+
+export function unsavePhrase(id: string): void {
+  writeSavedPhrases(readSavedPhrases().filter((p) => p.id !== id));
+}
+
+export function isSavedPhrase(text: string, videoId?: string): boolean {
+  return readSavedPhrases().some(
+    (p) => p.text.trim() === text.trim() && p.videoId === videoId
+  );
 }
 
 export function recordReview(
@@ -269,6 +358,10 @@ export const defaultSettings: UserSettings = {
   hideSubtitles: false,
   smartHighlight: true,
   showFurigana: false,
+  vocabSize: 3000,
+  colorUnderlines: true,
+  showMachineTranslation: true,
+  showHumanTranslation: true,
 };
 
 export function readSettings(): UserSettings {

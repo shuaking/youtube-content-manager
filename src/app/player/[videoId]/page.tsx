@@ -8,7 +8,7 @@ import { SubtitleWord, Subtitle } from "@/types/subtitles";
 import { Video } from "@/types/catalog";
 import { exportSubtitles, exportVocabulary } from "@/lib/export";
 import { useSavedWords } from "@/hooks/useStore";
-import { saveWord, unsaveWord, logActivity } from "@/lib/storage";
+import { saveWord, unsaveWord, logActivity, savePhrase } from "@/lib/storage";
 
 // YouTube IFrame API types
 interface YTPlayer {
@@ -54,6 +54,24 @@ declare global {
   }
 }
 
+function ShortRow({ label, keys }: { label: string; keys: string[] }) {
+  return (
+    <div className="flex items-center justify-between">
+      <span className="text-white/70">{label}</span>
+      <div className="flex gap-1">
+        {keys.map((k, i) => (
+          <kbd
+            key={i}
+            className="rounded bg-white/10 px-2 py-1 text-sm text-white"
+          >
+            {k}
+          </kbd>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function PlayerPage({
   params,
 }: {
@@ -67,6 +85,9 @@ export default function PlayerPage({
   const [playbackSpeed, setPlaybackSpeed] = useState(1);
   const [autoPause, setAutoPause] = useState(true);
   const [showTranslation, setShowTranslation] = useState(true);
+  const [fuzzyMode, setFuzzyMode] = useState(false);
+  const [phraseToast, setPhraseToast] = useState<string | null>(null);
+  const [copyToast, setCopyToast] = useState<string | null>(null);
   const [selectedWord, setSelectedWord] = useState<SubtitleWord | null>(null);
   const [savedWordsList] = [useSavedWords()];
   const savedWords = useMemo(
@@ -359,6 +380,15 @@ export default function PlayerPage({
         return;
       }
 
+      // Ctrl/Cmd + C: copy current subtitle
+      if ((e.ctrlKey || e.metaKey) && (e.key === "c" || e.key === "C")) {
+        if (currentSubtitle && typeof navigator.clipboard !== "undefined") {
+          e.preventDefault();
+          navigator.clipboard.writeText(currentSubtitle.originalText).catch(() => {});
+        }
+        return;
+      }
+
       // Prevent default for certain keys
       if ([" ", "ArrowLeft", "ArrowRight", "Tab"].includes(e.key)) {
         e.preventDefault();
@@ -369,6 +399,8 @@ export default function PlayerPage({
         case " ":
         case "k":
         case "K":
+        case "w":
+        case "W":
           handlePlayPause();
           break;
 
@@ -392,21 +424,54 @@ export default function PlayerPage({
           }
           break;
 
-        // Next/Previous subtitle
-        case "n":
-        case "N":
-          handleNextSubtitle();
-          break;
+        // Previous subtitle (A or P)
+        case "a":
+        case "A":
         case "p":
         case "P":
           handlePreviousSubtitle();
           break;
 
-        // Replay current subtitle
+        // Replay current subtitle (S)
+        case "s":
+        case "S":
+          if (currentSubtitle) handleSkipToSubtitle(currentSubtitle);
+          break;
+
+        // Next subtitle (D or N)
+        case "d":
+        case "D":
+        case "n":
+        case "N":
+          handleNextSubtitle();
+          break;
+
+        // Toggle auto-pause (Q)
+        case "q":
+        case "Q":
+          setAutoPause((prev) => !prev);
+          break;
+
+        // Toggle fuzzy subtitle (E)
+        case "e":
+        case "E":
+          setFuzzyMode((prev) => !prev);
+          break;
+
+        // Save current subtitle as phrase (R)
         case "r":
         case "R":
-          if (currentSubtitle) {
-            handleSkipToSubtitle(currentSubtitle);
+          if (currentSubtitle && videoId) {
+            savePhrase({
+              text: currentSubtitle.originalText,
+              translation: currentSubtitle.translatedText || "",
+              source: videoTitle,
+              videoId,
+              subtitleId: currentSubtitle.id,
+              startTime: currentSubtitle.startTime,
+            });
+            setPhraseToast(`已保存: ${currentSubtitle.originalText.slice(0, 32)}...`);
+            setTimeout(() => setPhraseToast(null), 2000);
           }
           break;
 
@@ -699,7 +764,7 @@ export default function PlayerPage({
   const intermediateWords = allWords.filter(w => w.difficulty === "intermediate" && (w.saved || savedWords.has(w.text.toLowerCase()))).length;
   const advancedWords = allWords.filter(w => w.difficulty === "advanced" && (w.saved || savedWords.has(w.text.toLowerCase()))).length;
 
-  const handleExportSubtitles = (format: "csv" | "json") => {
+  const handleExportSubtitles = (format: "csv" | "json" | "srt" | "vtt") => {
     exportSubtitles(subtitles, format, videoTitle);
     setShowExportMenu(false);
   };
@@ -819,6 +884,18 @@ export default function PlayerPage({
                     >
                       字幕 (JSON)
                     </button>
+                    <button
+                      onClick={() => handleExportSubtitles("srt")}
+                      className="w-full rounded-lg px-3 py-2 text-left text-sm text-white transition-all hover:bg-white/10"
+                    >
+                      字幕 (SRT)
+                    </button>
+                    <button
+                      onClick={() => handleExportSubtitles("vtt")}
+                      className="w-full rounded-lg px-3 py-2 text-left text-sm text-white transition-all hover:bg-white/10"
+                    >
+                      字幕 (WebVTT)
+                    </button>
                   </div>
                   <div>
                     <div className="px-3 py-1 text-xs font-semibold text-white/60">
@@ -926,9 +1003,66 @@ export default function PlayerPage({
                 <>
                   {/* Original Text */}
                   <div className="mb-4 text-center">
-                    <p className="text-2xl leading-relaxed text-white">
+                    <p
+                      className={`text-2xl leading-relaxed text-white transition-all ${
+                        fuzzyMode ? "select-none blur-sm hover:blur-0" : ""
+                      }`}
+                      onClick={() => {
+                        if (fuzzyMode) setFuzzyMode(false);
+                      }}
+                    >
                       {renderSubtitleText(currentSubtitle)}
                     </p>
+                  </div>
+
+                  {/* Action Buttons */}
+                  <div className="mb-4 flex justify-center gap-2">
+                    <button
+                      onClick={() => {
+                        if (typeof navigator.clipboard === "undefined") return;
+                        navigator.clipboard
+                          .writeText(currentSubtitle.originalText)
+                          .then(() => {
+                            setCopyToast("已复制");
+                            setTimeout(() => setCopyToast(null), 1500);
+                          })
+                          .catch(() => {});
+                      }}
+                      title="复制字幕 (Ctrl+C)"
+                      className="rounded-lg border border-white/20 px-3 py-1 text-xs text-white transition-all hover:bg-white/10"
+                    >
+                      📋 复制
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (!videoId) return;
+                        savePhrase({
+                          text: currentSubtitle.originalText,
+                          translation: currentSubtitle.translatedText || "",
+                          source: videoTitle,
+                          videoId,
+                          subtitleId: currentSubtitle.id,
+                          startTime: currentSubtitle.startTime,
+                        });
+                        setPhraseToast(`已保存: ${currentSubtitle.originalText.slice(0, 32)}...`);
+                        setTimeout(() => setPhraseToast(null), 2000);
+                      }}
+                      title="保存为短语 (R)"
+                      className="rounded-lg border border-white/20 px-3 py-1 text-xs text-white transition-all hover:bg-white/10"
+                    >
+                      ⭐ 保存短语
+                    </button>
+                    <button
+                      onClick={() => setFuzzyMode((prev) => !prev)}
+                      title="模糊字幕 (E)"
+                      className={`rounded-lg border px-3 py-1 text-xs transition-all ${
+                        fuzzyMode
+                          ? "border-secondary bg-secondary/20 text-secondary"
+                          : "border-white/20 text-white hover:bg-white/10"
+                      }`}
+                    >
+                      {fuzzyMode ? "👁️‍🗨️ 已模糊" : "👁️ 模糊"}
+                    </button>
                   </div>
 
                   {/* Translation */}
@@ -1107,29 +1241,11 @@ export default function PlayerPage({
               <div>
                 <h3 className="mb-3 text-lg font-semibold text-secondary">播放控制</h3>
                 <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-white/70">播放/暂停</span>
-                    <div className="flex gap-2">
-                      <kbd className="rounded bg-white/10 px-2 py-1 text-sm text-white">空格</kbd>
-                      <kbd className="rounded bg-white/10 px-2 py-1 text-sm text-white">K</kbd>
-                    </div>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-white/70">后退 5 秒</span>
-                    <kbd className="rounded bg-white/10 px-2 py-1 text-sm text-white">←</kbd>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-white/70">前进 5 秒</span>
-                    <kbd className="rounded bg-white/10 px-2 py-1 text-sm text-white">→</kbd>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-white/70">后退 10 秒</span>
-                    <kbd className="rounded bg-white/10 px-2 py-1 text-sm text-white">J</kbd>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-white/70">前进 10 秒</span>
-                    <kbd className="rounded bg-white/10 px-2 py-1 text-sm text-white">L</kbd>
-                  </div>
+                  <ShortRow label="播放/暂停" keys={["空格", "K", "W"]} />
+                  <ShortRow label="后退 5 秒" keys={["←"]} />
+                  <ShortRow label="前进 5 秒" keys={["→"]} />
+                  <ShortRow label="后退 10 秒" keys={["J"]} />
+                  <ShortRow label="前进 10 秒" keys={["L"]} />
                 </div>
               </div>
 
@@ -1137,18 +1253,11 @@ export default function PlayerPage({
               <div>
                 <h3 className="mb-3 text-lg font-semibold text-secondary">字幕导航</h3>
                 <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-white/70">下一条字幕</span>
-                    <kbd className="rounded bg-white/10 px-2 py-1 text-sm text-white">N</kbd>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-white/70">上一条字幕</span>
-                    <kbd className="rounded bg-white/10 px-2 py-1 text-sm text-white">P</kbd>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-white/70">重播当前字幕</span>
-                    <kbd className="rounded bg-white/10 px-2 py-1 text-sm text-white">R</kbd>
-                  </div>
+                  <ShortRow label="上一字幕" keys={["A", "P"]} />
+                  <ShortRow label="重播当前字幕" keys={["S"]} />
+                  <ShortRow label="下一字幕" keys={["D", "N"]} />
+                  <ShortRow label="保存当前字幕为短语" keys={["R"]} />
+                  <ShortRow label="复制字幕到剪贴板" keys={["Ctrl/⌘", "C"]} />
                 </div>
               </div>
 
@@ -1156,14 +1265,8 @@ export default function PlayerPage({
               <div>
                 <h3 className="mb-3 text-lg font-semibold text-secondary">速度控制</h3>
                 <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-white/70">减速 0.25x</span>
-                    <kbd className="rounded bg-white/10 px-2 py-1 text-sm text-white">&lt;</kbd>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-white/70">加速 0.25x</span>
-                    <kbd className="rounded bg-white/10 px-2 py-1 text-sm text-white">&gt;</kbd>
-                  </div>
+                  <ShortRow label="减速 0.25x" keys={["<"]} />
+                  <ShortRow label="加速 0.25x" keys={[">"]} />
                 </div>
               </div>
 
@@ -1171,18 +1274,11 @@ export default function PlayerPage({
               <div>
                 <h3 className="mb-3 text-lg font-semibold text-secondary">界面切换</h3>
                 <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-white/70">切换翻译</span>
-                    <kbd className="rounded bg-white/10 px-2 py-1 text-sm text-white">T</kbd>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-white/70">切换标签</span>
-                    <kbd className="rounded bg-white/10 px-2 py-1 text-sm text-white">Tab</kbd>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-white/70">关闭弹窗</span>
-                    <kbd className="rounded bg-white/10 px-2 py-1 text-sm text-white">Esc</kbd>
-                  </div>
+                  <ShortRow label="切换翻译" keys={["T"]} />
+                  <ShortRow label="自动暂停开关" keys={["Q"]} />
+                  <ShortRow label="模糊/显示字幕" keys={["E"]} />
+                  <ShortRow label="切换标签" keys={["Tab"]} />
+                  <ShortRow label="关闭弹窗" keys={["Esc"]} />
                 </div>
               </div>
 
@@ -1198,10 +1294,7 @@ export default function PlayerPage({
                       <kbd className="rounded bg-white/10 px-2 py-1 text-sm text-white">9</kbd>
                     </div>
                   </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-white/70">显示快捷键帮助</span>
-                    <kbd className="rounded bg-white/10 px-2 py-1 text-sm text-white">?</kbd>
-                  </div>
+                  <ShortRow label="显示快捷键帮助" keys={["?"]} />
                 </div>
               </div>
             </div>
@@ -1458,6 +1551,13 @@ export default function PlayerPage({
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Toasts */}
+      {(phraseToast || copyToast) && (
+        <div className="fixed bottom-6 left-1/2 z-[60] -translate-x-1/2 rounded-lg border border-white/20 bg-black/90 px-4 py-2 text-sm text-white shadow-lg backdrop-blur">
+          {phraseToast || copyToast}
         </div>
       )}
     </main>

@@ -4,6 +4,7 @@ import { useSyncExternalStore, useCallback } from "react";
 import * as S from "@/lib/storage";
 
 const emptyWords: S.SavedWord[] = [];
+const emptyPhrases: S.SavedPhrase[] = [];
 const emptyHistory: S.HistoryEntry[] = [];
 const emptyChat: S.ChatMessage[] = [];
 
@@ -12,6 +13,14 @@ export function useSavedWords(): S.SavedWord[] {
     useCallback((cb) => S.subscribe("savedWords", cb), []),
     () => S.readSavedWords(),
     () => emptyWords
+  );
+}
+
+export function useSavedPhrases(): S.SavedPhrase[] {
+  return useSyncExternalStore(
+    useCallback((cb) => S.subscribe("savedPhrases", cb), []),
+    () => S.readSavedPhrases(),
+    () => emptyPhrases
   );
 }
 

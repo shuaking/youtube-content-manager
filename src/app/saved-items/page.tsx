@@ -3,8 +3,23 @@
 import { useState } from "react";
 import Link from "next/link";
 import { SearchIcon, ChevronRightIcon } from "@/components/icons";
-import { useSavedWords } from "@/hooks/useStore";
-import { unsaveWord, updateSavedWord, SavedWord } from "@/lib/storage";
+import { useSavedWords, useSavedPhrases } from "@/hooks/useStore";
+import {
+  unsaveWord,
+  updateSavedWord,
+  unsavePhrase,
+  bulkUpdateStage,
+  SavedWord,
+  SavedPhrase,
+  WordStage,
+} from "@/lib/storage";
+
+const STAGE_META: Record<WordStage, { label: string; color: string; bg: string }> = {
+  known: { label: "已知", color: "text-white", bg: "bg-white/20" },
+  learning: { label: "学习中", color: "text-orange-300", bg: "bg-orange-500/20" },
+  uncommon: { label: "不常用", color: "text-white/50", bg: "bg-white/10" },
+  ignore: { label: "忽略", color: "text-white/40", bg: "bg-white/5" },
+};
 
 function exportCsv(words: SavedWord[]): void {
   const header = "word,translation,difficulty,definition,mastered,savedDate\n";
@@ -61,12 +76,15 @@ function exportAnkiTsv(words: SavedWord[]): void {
 
 export default function SavedItemsPage() {
   const savedWords = useSavedWords();
+  const savedPhrases = useSavedPhrases();
   const [activeTab, setActiveTab] = useState<"all" | "marked" | "phrases">("marked");
   const [searchQuery, setSearchQuery] = useState("");
   const [filterDifficulty, setFilterDifficulty] = useState("all");
   const [filterMastered, setFilterMastered] = useState("all");
+  const [filterStage, setFilterStage] = useState<"all" | WordStage>("all");
   const [sortBy, setSortBy] = useState("recent");
   const [selectedWord, setSelectedWord] = useState<SavedWord | null>(null);
+  const [selectedPhrase, setSelectedPhrase] = useState<SavedPhrase | null>(null);
 
   const filteredWords = savedWords
     .filter((word) => {
@@ -79,7 +97,8 @@ export default function SavedItemsPage() {
         filterMastered === "all" ||
         (filterMastered === "mastered" && word.mastered) ||
         (filterMastered === "learning" && !word.mastered);
-      return matchesSearch && matchesDifficulty && matchesMastered;
+      const matchesStage = filterStage === "all" || word.stage === filterStage;
+      return matchesSearch && matchesDifficulty && matchesMastered && matchesStage;
     })
     .sort((a, b) => {
       if (sortBy === "recent")
@@ -179,15 +198,100 @@ export default function SavedItemsPage() {
       <section className="w-full py-12">
         <div className="mx-auto max-w-7xl px-6">
           {activeTab === "phrases" ? (
-            <div className="rounded-xl border border-white/10 bg-card p-12 text-center">
-              <div className="mb-4 text-4xl">📝</div>
-              <h3 className="mb-2 text-xl font-semibold text-white">
-                保存的短语
-              </h3>
-              <p className="text-white/60">
-                此功能即将推出。您可以保存完整的句子和短语以供日后复习。
-              </p>
-            </div>
+            savedPhrases.length === 0 ? (
+              <div className="rounded-xl border border-white/10 bg-card p-12 text-center">
+                <div className="mb-4 text-4xl">📝</div>
+                <h3 className="mb-2 text-xl font-semibold text-white">保存的短语</h3>
+                <p className="mb-6 text-white/60">
+                  在播放器观看视频时按 <kbd className="rounded bg-white/10 px-1">R</kbd> 键保存当前字幕到短语收藏。
+                </p>
+                <Link
+                  href="/catalog"
+                  className="rounded-lg bg-secondary px-6 py-3 font-semibold text-secondary-foreground transition-all hover:opacity-90"
+                >
+                  浏览内容
+                </Link>
+              </div>
+            ) : (
+              <div className="grid gap-8 lg:grid-cols-3">
+                <div className="lg:col-span-2 space-y-3">
+                  <div className="mb-4 text-sm text-white/60">
+                    共 {savedPhrases.length} 条短语
+                  </div>
+                  {savedPhrases
+                    .slice()
+                    .sort(
+                      (a, b) =>
+                        new Date(b.savedDate).getTime() - new Date(a.savedDate).getTime()
+                    )
+                    .map((phrase) => (
+                      <button
+                        key={phrase.id}
+                        onClick={() => setSelectedPhrase(phrase)}
+                        className={`w-full rounded-xl border p-4 text-left transition-all ${
+                          selectedPhrase?.id === phrase.id
+                            ? "border-secondary bg-secondary/10"
+                            : "border-white/10 bg-card hover:border-white/20 hover:bg-white/5"
+                        }`}
+                      >
+                        <p className="mb-2 text-white">{phrase.text}</p>
+                        {phrase.translation && (
+                          <p className="mb-2 text-sm text-white/60">{phrase.translation}</p>
+                        )}
+                        <div className="flex items-center justify-between text-xs text-white/50">
+                          <span>来源: {phrase.source}</span>
+                          <span>{new Date(phrase.savedDate).toLocaleDateString("zh-CN")}</span>
+                        </div>
+                      </button>
+                    ))}
+                </div>
+                <div className="lg:col-span-1">
+                  {selectedPhrase ? (
+                    <div className="sticky top-20 rounded-2xl border border-white/10 bg-card p-6">
+                      <h3 className="mb-3 font-semibold text-white">短语详情</h3>
+                      <p className="mb-4 text-white leading-relaxed">{selectedPhrase.text}</p>
+                      {selectedPhrase.translation && (
+                        <p className="mb-4 border-t border-white/10 pt-4 text-white/70">
+                          {selectedPhrase.translation}
+                        </p>
+                      )}
+                      <div className="mb-4 space-y-1 text-sm text-white/60">
+                        <div>来源: {selectedPhrase.source}</div>
+                        {selectedPhrase.startTime !== undefined && (
+                          <div>
+                            时间点: {Math.floor(selectedPhrase.startTime / 60)}:
+                            {String(Math.floor(selectedPhrase.startTime % 60)).padStart(2, "0")}
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex gap-2">
+                        {selectedPhrase.videoId && (
+                          <Link
+                            href={`/player/${selectedPhrase.videoId}`}
+                            className="flex-1 rounded-lg bg-secondary px-4 py-2 text-center text-sm font-semibold text-secondary-foreground transition-all hover:opacity-90"
+                          >
+                            播放器打开
+                          </Link>
+                        )}
+                        <button
+                          onClick={() => {
+                            unsavePhrase(selectedPhrase.id);
+                            setSelectedPhrase(null);
+                          }}
+                          className="rounded-lg border border-red-500/50 bg-red-500/10 px-4 py-2 text-sm font-semibold text-red-400 transition-all hover:bg-red-500/20"
+                        >
+                          删除
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="sticky top-20 rounded-2xl border border-white/10 bg-card p-12 text-center text-white/60">
+                      选择一条短语查看详情
+                    </div>
+                  )}
+                </div>
+              </div>
+            )
           ) : savedWords.length === 0 ? (
             <div className="rounded-xl border border-white/10 bg-card p-12 text-center">
               <div className="mb-4 text-4xl">📚</div>
@@ -250,12 +354,24 @@ export default function SavedItemsPage() {
                       </select>
 
                       <select
+                        value={filterStage}
+                        onChange={(e) => setFilterStage(e.target.value as "all" | WordStage)}
+                        className="rounded-lg border border-white/20 bg-white/5 px-4 py-2 text-white outline-none transition-all focus:border-secondary"
+                      >
+                        <option value="all">所有阶段</option>
+                        <option value="known">已知</option>
+                        <option value="learning">学习中</option>
+                        <option value="uncommon">不常用</option>
+                        <option value="ignore">忽略</option>
+                      </select>
+
+                      <select
                         value={filterMastered}
                         onChange={(e) => setFilterMastered(e.target.value)}
                         className="rounded-lg border border-white/20 bg-white/5 px-4 py-2 text-white outline-none transition-all focus:border-secondary"
                       >
                         <option value="all">所有状态</option>
-                        <option value="learning">学习中</option>
+                        <option value="learning">未掌握</option>
                         <option value="mastered">已掌握</option>
                       </select>
 
@@ -269,6 +385,30 @@ export default function SavedItemsPage() {
                         <option value="difficulty">难度排序</option>
                       </select>
                     </div>
+
+                    {filteredWords.length > 0 && (
+                      <div className="flex flex-wrap items-center gap-2 rounded-lg border border-white/10 bg-card p-2 text-sm">
+                        <span className="px-2 text-white/60">
+                          批量设为（{filteredWords.length} 条）:
+                        </span>
+                        {(["known", "learning", "uncommon", "ignore"] as WordStage[]).map(
+                          (s) => (
+                            <button
+                              key={s}
+                              onClick={() =>
+                                bulkUpdateStage(
+                                  filteredWords.map((w) => w.word),
+                                  s
+                                )
+                              }
+                              className={`rounded px-3 py-1 font-semibold transition-all hover:opacity-80 ${STAGE_META[s].bg} ${STAGE_META[s].color}`}
+                            >
+                              {STAGE_META[s].label}
+                            </button>
+                          )
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   <div className="space-y-3">
@@ -310,6 +450,11 @@ export default function SavedItemsPage() {
                                 {word.difficulty === "beginner" && "初级"}
                                 {word.difficulty === "intermediate" && "中级"}
                                 {word.difficulty === "advanced" && "高级"}
+                              </span>
+                              <span
+                                className={`rounded px-2 py-0.5 ${STAGE_META[word.stage || "learning"].bg} ${STAGE_META[word.stage || "learning"].color}`}
+                              >
+                                {STAGE_META[word.stage || "learning"].label}
                               </span>
                               {word.mastered && (
                                 <span className="rounded bg-green-500/20 px-2 py-0.5 text-green-400">
@@ -406,6 +551,32 @@ export default function SavedItemsPage() {
                       </div>
 
                       <div className="space-y-3">
+                        <div>
+                          <div className="mb-2 text-xs text-white/60">学习阶段</div>
+                          <div className="grid grid-cols-4 gap-2">
+                            {(["known", "learning", "uncommon", "ignore"] as WordStage[]).map(
+                              (s) => {
+                                const active = (selectedWord.stage || "learning") === s;
+                                return (
+                                  <button
+                                    key={s}
+                                    onClick={() => {
+                                      updateSavedWord(selectedWord.word, { stage: s });
+                                      setSelectedWord({ ...selectedWord, stage: s });
+                                    }}
+                                    className={`rounded-lg px-2 py-2 text-xs font-semibold transition-all ${
+                                      active
+                                        ? `ring-2 ring-secondary ${STAGE_META[s].bg} ${STAGE_META[s].color}`
+                                        : `${STAGE_META[s].bg} ${STAGE_META[s].color} opacity-60 hover:opacity-100`
+                                    }`}
+                                  >
+                                    {STAGE_META[s].label}
+                                  </button>
+                                );
+                              }
+                            )}
+                          </div>
+                        </div>
                         <button
                           onClick={() => handleToggleMastered(selectedWord)}
                           className="w-full rounded-lg bg-secondary px-4 py-3 font-semibold text-secondary-foreground transition-all hover:opacity-90"
