@@ -5,6 +5,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { PlayIcon } from "@/components/icons";
 import { Video, Channel } from "@/types/catalog";
+import { Subtitle } from "@/types/subtitles";
 import { use, useEffect, useState } from "react";
 
 export default function VideoDetailPage({
@@ -18,6 +19,13 @@ export default function VideoDetailPage({
   const [relatedVideos, setRelatedVideos] = useState<Video[]>([]);
   const [loading, setLoading] = useState(true);
   const [missing, setMissing] = useState(false);
+  const [analysis, setAnalysis] = useState<{
+    total: number;
+    beginner: number;
+    intermediate: number;
+    advanced: number;
+  } | null>(null);
+  const [analyzing, setAnalyzing] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -222,6 +230,96 @@ export default function VideoDetailPage({
                   </Link>
                 </div>
               )}
+
+              {/* Vocabulary Difficulty Analysis */}
+              <div className="mt-6 rounded-2xl border border-white/10 bg-card p-6">
+                <div className="mb-4 flex items-center justify-between">
+                  <h3 className="font-semibold text-white">词汇难度分析</h3>
+                  {!analysis && (
+                    <button
+                      onClick={async () => {
+                        if (!video) return;
+                        setAnalyzing(true);
+                        try {
+                          const res = await fetch(`/api/subtitles/${video.id}`);
+                          if (!res.ok) throw new Error("字幕获取失败");
+                          const data = (await res.json()) as { subtitles: Subtitle[] };
+                          const allText = data.subtitles.map((s) => s.originalText).join(" ");
+                          const tokens = allText
+                            .toLowerCase()
+                            .replace(/[^\w\s'-]/g, " ")
+                            .split(/\s+/)
+                            .filter((w) => w.length >= 2 && /[a-z]/.test(w));
+                          const unique = Array.from(new Set(tokens));
+                          let b = 0, i = 0, a = 0;
+                          for (const w of unique) {
+                            if (w.length >= 10) a++;
+                            else if (w.length >= 7) i++;
+                            else b++;
+                          }
+                          setAnalysis({ total: unique.length, beginner: b, intermediate: i, advanced: a });
+                        } catch {
+                          setAnalysis({ total: 0, beginner: 0, intermediate: 0, advanced: 0 });
+                        } finally {
+                          setAnalyzing(false);
+                        }
+                      }}
+                      disabled={analyzing}
+                      className="rounded-lg border border-white/20 px-3 py-1 text-xs text-white transition-all hover:bg-white/10 disabled:opacity-30"
+                    >
+                      {analyzing ? "分析中..." : "开始分析"}
+                    </button>
+                  )}
+                </div>
+                {analysis ? (
+                  analysis.total === 0 ? (
+                    <p className="text-sm text-white/60">字幕不可用或为空。</p>
+                  ) : (
+                    <div>
+                      <div className="mb-3 flex h-4 overflow-hidden rounded-full bg-white/5">
+                        <div
+                          className="bg-blue-400"
+                          style={{ width: `${(analysis.beginner / analysis.total) * 100}%` }}
+                          title={`初级 ${analysis.beginner}`}
+                        />
+                        <div
+                          className="bg-yellow-400"
+                          style={{
+                            width: `${(analysis.intermediate / analysis.total) * 100}%`,
+                          }}
+                          title={`中级 ${analysis.intermediate}`}
+                        />
+                        <div
+                          className="bg-red-400"
+                          style={{ width: `${(analysis.advanced / analysis.total) * 100}%` }}
+                          title={`高级 ${analysis.advanced}`}
+                        />
+                      </div>
+                      <div className="grid grid-cols-3 gap-2 text-center text-xs">
+                        <div>
+                          <div className="text-blue-400 font-bold">{analysis.beginner}</div>
+                          <div className="text-white/50">初级</div>
+                        </div>
+                        <div>
+                          <div className="text-yellow-400 font-bold">{analysis.intermediate}</div>
+                          <div className="text-white/50">中级</div>
+                        </div>
+                        <div>
+                          <div className="text-red-400 font-bold">{analysis.advanced}</div>
+                          <div className="text-white/50">高级</div>
+                        </div>
+                      </div>
+                      <p className="mt-3 text-xs text-white/50">
+                        共 {analysis.total} 个独特词汇
+                      </p>
+                    </div>
+                  )
+                ) : (
+                  <p className="text-sm text-white/60">
+                    点击&ldquo;开始分析&rdquo;，根据字幕估算本视频的词汇难度分布。
+                  </p>
+                )}
+              </div>
             </div>
 
             {/* Sidebar - Related Videos */}

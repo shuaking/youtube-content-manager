@@ -69,7 +69,7 @@ export default function ChatbotPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isTyping]);
 
-  const handleSend = () => {
+  const handleSend = async () => {
     if (!inputValue.trim()) return;
 
     const userMessage: ChatMessage = {
@@ -85,11 +85,19 @@ export default function ChatbotPage() {
     setInputValue("");
     setIsTyping(true);
 
-    setTimeout(() => {
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messages: updated.map((m) => ({ role: m.role, content: m.content })),
+        }),
+      });
+      const data = await res.json();
       const assistant: ChatMessage = {
         id: nextId(),
         role: "assistant",
-        content: generateResponse(submitted, updated),
+        content: data.reply || generateResponse(submitted, updated),
         timestamp: new Date().toISOString(),
       };
       const finalList = [...updated, assistant];
@@ -104,7 +112,16 @@ export default function ChatbotPage() {
           link: "/chatbot",
         });
       }
-    }, 900);
+    } catch {
+      const assistant: ChatMessage = {
+        id: nextId(),
+        role: "assistant",
+        content: generateResponse(submitted, updated),
+        timestamp: new Date().toISOString(),
+      };
+      persist([...updated, assistant]);
+      setIsTyping(false);
+    }
   };
 
   const handleTopicClick = (topic: string) => {

@@ -2,6 +2,8 @@
 
 import { languages } from "@/types/catalog";
 import { useSettings } from "@/hooks/useStore";
+import { useAuth } from "@/hooks/useAuth";
+import { useState } from "react";
 
 const uiLanguages = [
   { value: "zh-CN", label: "中文（简体）" },
@@ -52,15 +54,7 @@ export default function SettingsPage() {
         </Section>
 
         <Section title="账户信息" icon="👤">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-white">未登录</p>
-              <p className="mt-1 text-sm text-white/60">登录后可同步进度、保存词汇和使用 Pro 功能</p>
-            </div>
-            <button className="rounded-lg bg-secondary px-6 py-2 font-semibold text-secondary-foreground transition-all hover:opacity-90">
-              登录
-            </button>
-          </div>
+          <AccountPanel />
         </Section>
 
         <Section title="基本设置" icon="⚙️">
@@ -293,6 +287,133 @@ function SelectRow({
           </option>
         ))}
       </select>
+    </div>
+  );
+}
+
+function AccountPanel() {
+  const auth = useAuth();
+  const [mode, setMode] = useState<"signin" | "signup">("signin");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [message, setMessage] = useState<{ text: string; ok: boolean } | null>(null);
+
+  if (!auth.configured) {
+    return (
+      <div>
+        <p className="mb-2 text-white">Supabase 未配置</p>
+        <p className="text-sm text-white/60">
+          应用正在本地模式运行，所有数据仅保存在浏览器中。管理员可在环境变量中配置{" "}
+          <code className="rounded bg-white/10 px-1">NEXT_PUBLIC_SUPABASE_URL</code> 和{" "}
+          <code className="rounded bg-white/10 px-1">NEXT_PUBLIC_SUPABASE_ANON_KEY</code>{" "}
+          启用云端账户同步。
+        </p>
+      </div>
+    );
+  }
+
+  if (auth.loading) {
+    return <p className="text-white/60">正在加载账户状态...</p>;
+  }
+
+  if (auth.user) {
+    return (
+      <div className="flex items-center justify-between gap-4">
+        <div>
+          <p className="text-white">{auth.user.email}</p>
+          <p className="mt-1 text-sm text-white/60">
+            已登录 · 用户 ID: {auth.user.id.slice(0, 8)}...
+          </p>
+        </div>
+        <button
+          onClick={() => auth.signOut()}
+          className="rounded-lg border border-white/20 px-4 py-2 font-semibold text-white transition-all hover:bg-white/10"
+        >
+          退出登录
+        </button>
+      </div>
+    );
+  }
+
+  const submit = async () => {
+    setSubmitting(true);
+    setMessage(null);
+    const fn = mode === "signin" ? auth.signIn : auth.signUp;
+    const { error } = await fn(email, password);
+    if (error) {
+      setMessage({ text: error, ok: false });
+    } else if (mode === "signup") {
+      setMessage({ text: "注册成功！请查收邮件完成验证。", ok: true });
+    } else {
+      setMessage({ text: "登录成功", ok: true });
+    }
+    setSubmitting(false);
+  };
+
+  return (
+    <div className="space-y-3">
+      <div className="flex gap-2">
+        <button
+          onClick={() => setMode("signin")}
+          className={`rounded-lg px-4 py-2 text-sm font-semibold transition-all ${
+            mode === "signin"
+              ? "bg-secondary text-secondary-foreground"
+              : "bg-white/5 text-white/70"
+          }`}
+        >
+          登录
+        </button>
+        <button
+          onClick={() => setMode("signup")}
+          className={`rounded-lg px-4 py-2 text-sm font-semibold transition-all ${
+            mode === "signup"
+              ? "bg-secondary text-secondary-foreground"
+              : "bg-white/5 text-white/70"
+          }`}
+        >
+          注册
+        </button>
+      </div>
+
+      <input
+        type="email"
+        value={email}
+        onChange={(e) => setEmail(e.target.value)}
+        placeholder="邮箱"
+        autoComplete="email"
+        className="w-full rounded-lg border border-white/10 bg-background px-4 py-2 text-sm text-white placeholder-white/40 outline-none focus:border-white/20 focus:ring-2 focus:ring-secondary/50"
+      />
+      <input
+        type="password"
+        value={password}
+        onChange={(e) => setPassword(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") submit();
+        }}
+        placeholder="密码"
+        autoComplete={mode === "signup" ? "new-password" : "current-password"}
+        className="w-full rounded-lg border border-white/10 bg-background px-4 py-2 text-sm text-white placeholder-white/40 outline-none focus:border-white/20 focus:ring-2 focus:ring-secondary/50"
+      />
+      <button
+        onClick={submit}
+        disabled={!email || !password || submitting}
+        className="w-full rounded-lg bg-secondary px-4 py-2 font-semibold text-secondary-foreground transition-all hover:opacity-90 disabled:opacity-30"
+      >
+        {submitting ? "处理中..." : mode === "signin" ? "登录" : "注册"}
+      </button>
+
+      {message && (
+        <div
+          className={`rounded-lg p-3 text-sm ${
+            message.ok
+              ? "border border-green-500/30 bg-green-500/10 text-green-400"
+              : "border border-red-500/30 bg-red-500/10 text-red-400"
+          }`}
+        >
+          {message.text}
+        </div>
+      )}
     </div>
   );
 }

@@ -6,6 +6,7 @@ import Image from "next/image";
 import { SearchIcon } from "@/components/icons";
 import { languages, Video, Channel } from "@/types/catalog";
 import { DualRangeSlider } from "@/components/ui/dual-range-slider";
+import { parseSubtitleFile, formatCueTime, ParsedSubtitleCue } from "@/lib/subtitle-parser";
 
 type CatalogTab =
   | "youtube"
@@ -424,10 +425,10 @@ export default function CatalogPage() {
       )}
 
       {/* Placeholder tabs */}
-      {activeTab === "books" && <PlaceholderTab icon="📚" title="图书" description="将任何网页或电子书导入到 Language Reactor，配合文字转语音功能学习。" hint="即将推出：上传 EPUB / PDF，支持 TTS 朗读和逐词翻译。" />}
-      {activeTab === "fsi-dli" && <PlaceholderTab icon="🎓" title="FSI/DLI 课程" description="美国外交学院（FSI）和国防语言学院（DLI）的经典语言课程。" hint="即将推出：经过验证的政府级语言培训教材，循序渐进的系统化口语练习。" />}
-      {activeTab === "media" && <PlaceholderTab icon="📁" title="媒体文件" description="上传本地视频、音频或字幕文件，在线学习。" hint="即将推出：支持 MP4 / MKV / SRT / VTT 上传，同步双语字幕。" badge="NEW" />}
-      {activeTab === "podcasts" && <PlaceholderTab icon="🎧" title="播客" description="精选的母语播客节目，按难度和主题分类。" hint="即将推出：订阅 RSS 源，自动生成字幕，配合词典学习。" />}
+      {activeTab === "books" && <BooksTab />}
+      {activeTab === "fsi-dli" && <FsiDliTab />}
+      {activeTab === "media" && <MediaFileTab />}
+      {activeTab === "podcasts" && <PodcastsTab />}
       {activeTab === "mytext" && (
         <section className="w-full py-12">
           <div className="mx-auto max-w-4xl px-6">
@@ -495,6 +496,422 @@ function PlaceholderTab({
         <div className="rounded-xl border border-white/10 bg-card p-6 text-sm text-white/60">
           {hint}
         </div>
+      </div>
+    </section>
+  );
+}
+
+function MediaFileTab() {
+  const [cues, setCues] = useState<ParsedSubtitleCue[]>([]);
+  const [filename, setFilename] = useState<string>("");
+  const [error, setError] = useState<string>("");
+
+  const handleUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setError("");
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const content = typeof ev.target?.result === "string" ? ev.target.result : "";
+      try {
+        const parsed = parseSubtitleFile(file.name, content);
+        if (parsed.length === 0) {
+          setError("未识别到字幕条目，请确认文件格式正确。");
+          return;
+        }
+        setCues(parsed);
+        setFilename(file.name);
+      } catch {
+        setError("解析失败");
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  const speak = (text: string) => {
+    if (typeof window === "undefined" || !window.speechSynthesis) return;
+    const utter = new SpeechSynthesisUtterance(text);
+    utter.lang = "en-US";
+    utter.rate = 0.9;
+    window.speechSynthesis.cancel();
+    window.speechSynthesis.speak(utter);
+  };
+
+  return (
+    <section className="w-full py-12">
+      <div className="mx-auto max-w-5xl px-6">
+        <div className="mb-6 flex items-center gap-3">
+          <span className="text-3xl">📁</span>
+          <h2 className="text-2xl font-bold text-white">媒体文件</h2>
+          <span className="rounded bg-red-500 px-2 py-0.5 text-xs font-bold text-white">NEW</span>
+        </div>
+
+        <div className="mb-6 rounded-2xl border border-white/10 bg-card p-6">
+          <p className="mb-4 text-white/70">
+            上传本地字幕文件（SRT / WebVTT），在浏览器内解析并浏览每一条字幕，可点击朗读。
+          </p>
+          <label className="inline-block cursor-pointer rounded-lg bg-secondary px-6 py-3 font-semibold text-secondary-foreground transition-all hover:opacity-90">
+            选择文件 (.srt / .vtt)
+            <input
+              type="file"
+              accept=".srt,.vtt,text/plain"
+              onChange={handleUpload}
+              className="hidden"
+            />
+          </label>
+          {filename && (
+            <span className="ml-4 text-sm text-white/60">已加载: {filename}</span>
+          )}
+          {error && <div className="mt-3 text-sm text-red-400">{error}</div>}
+        </div>
+
+        {cues.length > 0 && (
+          <div className="rounded-2xl border border-white/10 bg-card p-6">
+            <div className="mb-4 flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-white">
+                字幕条目 ({cues.length})
+              </h3>
+              <Link
+                href="/text"
+                className="rounded-lg border border-white/20 px-4 py-2 text-sm font-semibold text-white transition-all hover:bg-white/10"
+              >
+                一键跳转文本分析 →
+              </Link>
+            </div>
+            <div className="max-h-[60vh] space-y-2 overflow-y-auto pr-2">
+              {cues.map((cue) => (
+                <div
+                  key={cue.id}
+                  className="rounded-lg border border-white/10 bg-white/5 p-3"
+                >
+                  <div className="mb-1 flex items-center justify-between text-xs text-white/50">
+                    <span>
+                      #{cue.id} · {formatCueTime(cue.startTime)} - {formatCueTime(cue.endTime)}
+                    </span>
+                    <button
+                      onClick={() => speak(cue.text)}
+                      className="text-white/60 hover:text-white"
+                      title="朗读"
+                    >
+                      🔊
+                    </button>
+                  </div>
+                  <p className="whitespace-pre-wrap text-sm text-white">{cue.text}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+type BookChapter = { title: string; body: string };
+
+function splitChapters(text: string): BookChapter[] {
+  const cleaned = text.replace(/\r\n/g, "\n").trim();
+  const lines = cleaned.split("\n");
+  const chapters: BookChapter[] = [];
+  let current: BookChapter | null = null;
+  const headingRe = /^(Chapter|第)\s*[\dIVXLCDM一二三四五六七八九十百]+[\s:：.、\-]?\s*(.*)$/i;
+
+  for (const line of lines) {
+    if (headingRe.test(line.trim())) {
+      if (current) chapters.push(current);
+      current = { title: line.trim(), body: "" };
+    } else {
+      if (!current) current = { title: "开始", body: "" };
+      current.body += line + "\n";
+    }
+  }
+  if (current) chapters.push(current);
+  if (chapters.length === 0) {
+    chapters.push({ title: "全文", body: cleaned });
+  }
+  return chapters;
+}
+
+function BooksTab() {
+  const [chapters, setChapters] = useState<BookChapter[]>([]);
+  const [selected, setSelected] = useState<number>(0);
+  const [filename, setFilename] = useState<string>("");
+
+  const handleUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const content = typeof ev.target?.result === "string" ? ev.target.result : "";
+      setChapters(splitChapters(content));
+      setSelected(0);
+      setFilename(file.name);
+    };
+    reader.readAsText(file);
+  };
+
+  return (
+    <section className="w-full py-12">
+      <div className="mx-auto max-w-7xl px-6">
+        <div className="mb-6 flex items-center gap-3">
+          <span className="text-3xl">📚</span>
+          <h2 className="text-2xl font-bold text-white">图书</h2>
+        </div>
+
+        <div className="mb-6 rounded-2xl border border-white/10 bg-card p-6">
+          <p className="mb-4 text-white/70">
+            上传纯文本（.txt / .md）格式的书籍或长文章。按「Chapter」或「第N章」自动切分章节。
+          </p>
+          <label className="inline-block cursor-pointer rounded-lg bg-secondary px-6 py-3 font-semibold text-secondary-foreground transition-all hover:opacity-90">
+            选择文件 (.txt / .md)
+            <input
+              type="file"
+              accept=".txt,.md,text/plain,text/markdown"
+              onChange={handleUpload}
+              className="hidden"
+            />
+          </label>
+          {filename && (
+            <span className="ml-4 text-sm text-white/60">已加载: {filename}</span>
+          )}
+        </div>
+
+        {chapters.length > 0 && (
+          <div className="grid gap-6 lg:grid-cols-4">
+            <aside className="lg:col-span-1">
+              <h3 className="mb-3 text-sm font-semibold text-white/80">
+                章节 ({chapters.length})
+              </h3>
+              <div className="sticky top-20 max-h-[70vh] space-y-1 overflow-y-auto pr-2">
+                {chapters.map((ch, i) => (
+                  <button
+                    key={i}
+                    onClick={() => setSelected(i)}
+                    className={`w-full rounded-lg border p-3 text-left text-sm transition-all ${
+                      selected === i
+                        ? "border-secondary bg-secondary/10 text-white"
+                        : "border-white/10 bg-card text-white/70 hover:bg-white/5"
+                    }`}
+                  >
+                    <div className="line-clamp-2 font-semibold">{ch.title}</div>
+                  </button>
+                ))}
+              </div>
+            </aside>
+            <article className="rounded-2xl border border-white/10 bg-card p-8 lg:col-span-3">
+              <div className="mb-4 flex items-center justify-between">
+                <h3 className="text-xl font-bold text-white">{chapters[selected]?.title}</h3>
+                <Link
+                  href="/text"
+                  className="rounded-lg border border-white/20 px-4 py-2 text-sm font-semibold text-white transition-all hover:bg-white/10"
+                  title="跳转到文本分析"
+                >
+                  分析本章 →
+                </Link>
+              </div>
+              <pre className="whitespace-pre-wrap font-sans text-base leading-relaxed text-white/80">
+                {chapters[selected]?.body}
+              </pre>
+            </article>
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+type PodcastEpisode = {
+  title: string;
+  description: string;
+  pubDate: string;
+  audioUrl: string;
+  duration: string;
+  link: string;
+};
+
+type PodcastFeed = {
+  title: string;
+  description: string;
+  image?: string;
+  episodes: PodcastEpisode[];
+};
+
+const SUGGESTED_FEEDS = [
+  { name: "NPR News Now", url: "https://feeds.npr.org/500005/podcast.xml" },
+  { name: "BBC Learning English", url: "https://podcasts.files.bbci.co.uk/p02pc9tn.rss" },
+  { name: "TED Talks Daily", url: "https://feeds.feedburner.com/TEDTalks_audio" },
+];
+
+function PodcastsTab() {
+  const [url, setUrl] = useState("");
+  const [feed, setFeed] = useState<PodcastFeed | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  const fetchFeed = async (target?: string) => {
+    const u = (target || url).trim();
+    if (!u) return;
+    setLoading(true);
+    setError("");
+    try {
+      const res = await fetch(`/api/rss?url=${encodeURIComponent(u)}`);
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setError(data.error || `HTTP ${res.status}`);
+        setFeed(null);
+      } else {
+        setFeed(await res.json());
+        if (target) setUrl(target);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "加载失败");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <section className="w-full py-12">
+      <div className="mx-auto max-w-5xl px-6">
+        <div className="mb-6 flex items-center gap-3">
+          <span className="text-3xl">🎧</span>
+          <h2 className="text-2xl font-bold text-white">播客</h2>
+        </div>
+
+        <div className="mb-6 rounded-2xl border border-white/10 bg-card p-6">
+          <p className="mb-4 text-white/70">
+            输入 RSS 源 URL 订阅播客节目，或从下方推荐选择。
+          </p>
+          <div className="flex flex-col gap-3 sm:flex-row">
+            <input
+              type="url"
+              placeholder="https://example.com/podcast.rss"
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") fetchFeed();
+              }}
+              className="flex-1 rounded-lg border border-white/10 bg-background px-4 py-2 text-white placeholder-white/40 outline-none transition-all focus:border-white/20 focus:ring-2 focus:ring-secondary/50"
+            />
+            <button
+              onClick={() => fetchFeed()}
+              disabled={!url.trim() || loading}
+              className="rounded-lg bg-secondary px-6 py-2 font-semibold text-secondary-foreground transition-all hover:opacity-90 disabled:opacity-30"
+            >
+              {loading ? "加载中..." : "订阅"}
+            </button>
+          </div>
+
+          <div className="mt-4">
+            <div className="mb-2 text-sm text-white/60">推荐播客:</div>
+            <div className="flex flex-wrap gap-2">
+              {SUGGESTED_FEEDS.map((s) => (
+                <button
+                  key={s.url}
+                  onClick={() => fetchFeed(s.url)}
+                  className="rounded-lg bg-white/5 px-3 py-1 text-sm text-white/80 transition-all hover:bg-white/10"
+                >
+                  {s.name}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {error && <div className="mt-3 text-sm text-red-400">错误：{error}</div>}
+        </div>
+
+        {feed && (
+          <div className="space-y-6">
+            <div className="rounded-2xl border border-white/10 bg-card p-6">
+              <h3 className="mb-2 text-xl font-bold text-white">{feed.title}</h3>
+              <p className="text-sm text-white/60 line-clamp-3">{feed.description}</p>
+            </div>
+
+            <div className="space-y-3">
+              {feed.episodes.map((ep, i) => (
+                <div key={i} className="rounded-xl border border-white/10 bg-card p-5">
+                  <div className="mb-2 flex items-start justify-between gap-4">
+                    <h4 className="font-semibold text-white">{ep.title}</h4>
+                    {ep.duration && (
+                      <span className="shrink-0 rounded bg-white/10 px-2 py-0.5 text-xs text-white/70">
+                        {ep.duration}
+                      </span>
+                    )}
+                  </div>
+                  {ep.description && (
+                    <p className="mb-3 line-clamp-3 text-sm text-white/60">
+                      {ep.description}
+                    </p>
+                  )}
+                  <div className="flex items-center gap-3">
+                    {ep.audioUrl && (
+                      <audio
+                        controls
+                        preload="none"
+                        src={ep.audioUrl}
+                        className="h-9 flex-1"
+                      />
+                    )}
+                    {ep.link && (
+                      <a
+                        href={ep.link}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="shrink-0 text-xs text-secondary hover:underline"
+                      >
+                        详情 ↗
+                      </a>
+                    )}
+                  </div>
+                  {ep.pubDate && (
+                    <div className="mt-2 text-xs text-white/40">{ep.pubDate}</div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function FsiDliTab() {
+  return (
+    <section className="w-full py-12">
+      <div className="mx-auto max-w-4xl px-6 space-y-4">
+        <div className="mb-2 flex items-center gap-3">
+          <span className="text-3xl">🎓</span>
+          <h2 className="text-2xl font-bold text-white">FSI / DLI 课程</h2>
+        </div>
+        <p className="mb-4 text-white/70">
+          美国外交学院（FSI）和国防语言学院（DLI）的经典公开语言课程。以下为官方或社区维护的公开资源。
+        </p>
+        <ResourceCard
+          title="Live Lingua — FSI 课程汇总"
+          description="FSI 全套免费语言课程（40+ 语言），含音频 + PDF"
+          href="https://www.livelingua.com/fsi"
+        />
+        <ResourceCard
+          title="DLI — Defense Language Institute"
+          description="DLI 官方，美军语言培训"
+          href="https://www.dliflc.edu/"
+        />
+        <ResourceCard
+          title="GLOSS — DLI 的在线学习平台"
+          description="1000+ 可免费访问的多语种学习单元"
+          href="https://gloss.dliflc.edu/"
+        />
+        <ResourceCard
+          title="Yojik's Website — FSI/DLI 归档"
+          description="社区整理的 FSI/DLI 历史课程下载"
+          href="https://www.yojik.eu/languages/FSI_English.html"
+        />
+        <ResourceCard
+          title="Archive.org — FSI Language Courses"
+          description="Internet Archive 上的 FSI 课程存档"
+          href="https://archive.org/details/languagecourses"
+        />
       </div>
     </section>
   );

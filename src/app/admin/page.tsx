@@ -25,7 +25,7 @@ interface ChannelPreview {
 
 export default function AdminPage() {
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<"video" | "channel">("video");
+  const [activeTab, setActiveTab] = useState<"video" | "channel" | "search">("video");
   const [videoId, setVideoId] = useState("");
   const [channelId, setChannelId] = useState("");
   const [loading, setLoading] = useState(false);
@@ -33,6 +33,22 @@ export default function AdminPage() {
   const [videoPreview, setVideoPreview] = useState<VideoPreview | null>(null);
   const [channelPreview, setChannelPreview] = useState<ChannelPreview | null>(null);
   const [channelVideos, setChannelVideos] = useState<VideoPreview[]>([]);
+
+  // Search state
+  const [searchQ, setSearchQ] = useState("");
+  const [captionsOnly, setCaptionsOnly] = useState(true);
+  const [searchType, setSearchType] = useState<"video" | "channel">("video");
+  const [searchResults, setSearchResults] = useState<Array<{
+    kind: string;
+    id: string;
+    title: string;
+    description: string;
+    channelTitle: string;
+    channelId: string;
+    thumbnail: string;
+    publishedAt: string;
+  }>>([]);
+  const [addingId, setAddingId] = useState<string | null>(null);
 
   const extractVideoId = (input: string): string => {
     // Handle full YouTube URLs
@@ -249,6 +265,16 @@ export default function AdminPage() {
             >
               添加频道
             </button>
+            <button
+              onClick={() => setActiveTab("search")}
+              className={`rounded-lg px-6 py-3 font-semibold transition-all ${
+                activeTab === "search"
+                  ? "bg-secondary text-secondary-foreground"
+                  : "bg-white/5 text-white/70 hover:bg-white/10"
+              }`}
+            >
+              🔍 搜索 YouTube
+            </button>
           </div>
         </div>
       </section>
@@ -256,7 +282,25 @@ export default function AdminPage() {
       {/* Content */}
       <section className="w-full py-12">
         <div className="mx-auto max-w-7xl px-6">
-          {activeTab === "video" ? (
+          {activeTab === "search" ? (
+            <SearchTab
+              q={searchQ}
+              setQ={setSearchQ}
+              captionsOnly={captionsOnly}
+              setCaptionsOnly={setCaptionsOnly}
+              searchType={searchType}
+              setSearchType={setSearchType}
+              results={searchResults}
+              setResults={setSearchResults}
+              addingId={addingId}
+              setAddingId={setAddingId}
+              loading={loading}
+              setLoading={setLoading}
+              error={error}
+              setError={setError}
+              router={router}
+            />
+          ) : activeTab === "video" ? (
             <div className="space-y-6">
               {/* Video Input */}
               <div className="rounded-2xl border border-white/10 bg-card p-6">
@@ -451,5 +495,207 @@ export default function AdminPage() {
         </div>
       </section>
     </main>
+  );
+}
+
+type SearchResult = {
+  kind: string;
+  id: string;
+  title: string;
+  description: string;
+  channelTitle: string;
+  channelId: string;
+  thumbnail: string;
+  publishedAt: string;
+};
+
+function SearchTab({
+  q,
+  setQ,
+  captionsOnly,
+  setCaptionsOnly,
+  searchType,
+  setSearchType,
+  results,
+  setResults,
+  addingId,
+  setAddingId,
+  loading,
+  setLoading,
+  error,
+  setError,
+  router,
+}: {
+  q: string;
+  setQ: (v: string) => void;
+  captionsOnly: boolean;
+  setCaptionsOnly: (v: boolean) => void;
+  searchType: "video" | "channel";
+  setSearchType: (v: "video" | "channel") => void;
+  results: SearchResult[];
+  setResults: (r: SearchResult[]) => void;
+  addingId: string | null;
+  setAddingId: (v: string | null) => void;
+  loading: boolean;
+  setLoading: (v: boolean) => void;
+  error: string;
+  setError: (v: string) => void;
+  router: ReturnType<typeof useRouter>;
+}) {
+  const doSearch = async () => {
+    if (!q.trim()) return;
+    setLoading(true);
+    setError("");
+    setResults([]);
+    try {
+      const params = new URLSearchParams({
+        q: q.trim(),
+        type: searchType,
+      });
+      if (searchType === "video" && captionsOnly) params.set("captionsOnly", "1");
+      const res = await fetch(`/api/youtube/search?${params.toString()}`);
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || `HTTP ${res.status}`);
+      } else {
+        setResults(data.results || []);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "搜索失败");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const addItem = async (item: SearchResult) => {
+    setAddingId(item.id);
+    setError("");
+    try {
+      const endpoint =
+        item.kind === "channel" ? "/api/catalog/channels" : "/api/catalog/videos";
+      const body: Record<string, string | string[]> =
+        item.kind === "channel"
+          ? { channelId: item.id, language: "en", platform: "youtube", topics: [] }
+          : { videoId: item.id, language: "en", difficulty: "intermediate", topics: [] };
+      const res = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || `HTTP ${res.status}`);
+      }
+      if (confirm(`已添加「${item.title}」。前往目录查看？`)) {
+        router.push("/catalog");
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "添加失败");
+    } finally {
+      setAddingId(null);
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="rounded-2xl border border-white/10 bg-card p-6">
+        <h2 className="mb-4 text-xl font-bold text-white">搜索 YouTube</h2>
+
+        <div className="mb-4 flex gap-2">
+          <button
+            onClick={() => setSearchType("video")}
+            className={`rounded-lg px-4 py-2 text-sm font-semibold transition-all ${
+              searchType === "video"
+                ? "bg-secondary text-secondary-foreground"
+                : "bg-white/5 text-white/70 hover:bg-white/10"
+            }`}
+          >
+            视频
+          </button>
+          <button
+            onClick={() => setSearchType("channel")}
+            className={`rounded-lg px-4 py-2 text-sm font-semibold transition-all ${
+              searchType === "channel"
+                ? "bg-secondary text-secondary-foreground"
+                : "bg-white/5 text-white/70 hover:bg-white/10"
+            }`}
+          >
+            频道
+          </button>
+        </div>
+
+        <div className="flex flex-col gap-3 sm:flex-row">
+          <input
+            type="text"
+            placeholder="输入关键词搜索..."
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") doSearch();
+            }}
+            className="flex-1 rounded-lg border border-white/10 bg-background px-4 py-2 text-white placeholder-white/40 outline-none transition-all focus:border-white/20 focus:ring-2 focus:ring-secondary/50"
+          />
+          <button
+            onClick={doSearch}
+            disabled={!q.trim() || loading}
+            className="rounded-lg bg-secondary px-6 py-2 font-semibold text-secondary-foreground transition-all hover:opacity-90 disabled:opacity-30"
+          >
+            {loading ? "搜索中..." : "搜索"}
+          </button>
+        </div>
+
+        {searchType === "video" && (
+          <label className="mt-4 flex cursor-pointer items-center gap-2 text-sm text-white/70">
+            <input
+              type="checkbox"
+              checked={captionsOnly}
+              onChange={(e) => setCaptionsOnly(e.target.checked)}
+              className="h-4 w-4"
+            />
+            <span>仅显示带字幕的视频</span>
+          </label>
+        )}
+
+        {error && (
+          <div className="mt-4 rounded-lg border border-red-500/20 bg-red-500/10 p-3 text-sm text-red-400">
+            {error}
+          </div>
+        )}
+      </div>
+
+      {results.length > 0 && (
+        <div className="grid gap-4 md:grid-cols-2">
+          {results.map((item) => (
+            <div
+              key={`${item.kind}-${item.id}`}
+              className="flex gap-4 rounded-xl border border-white/10 bg-card p-4"
+            >
+              {item.thumbnail && (
+                /* eslint-disable-next-line @next/next/no-img-element */
+                <img
+                  src={item.thumbnail}
+                  alt={item.title}
+                  className="h-24 w-36 flex-shrink-0 rounded-lg object-cover"
+                />
+              )}
+              <div className="flex-1">
+                <h3 className="mb-1 line-clamp-2 font-semibold text-white">{item.title}</h3>
+                <div className="mb-2 text-xs text-white/50">
+                  {item.channelTitle} · {new Date(item.publishedAt).toLocaleDateString("zh-CN")}
+                </div>
+                <p className="mb-3 line-clamp-2 text-xs text-white/60">{item.description}</p>
+                <button
+                  onClick={() => addItem(item)}
+                  disabled={addingId === item.id}
+                  className="rounded-lg bg-secondary px-3 py-1 text-xs font-semibold text-secondary-foreground transition-all hover:opacity-90 disabled:opacity-30"
+                >
+                  {addingId === item.id ? "添加中..." : "添加到目录"}
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
