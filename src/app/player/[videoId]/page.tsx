@@ -338,6 +338,7 @@ export default function PlayerPage({
   const [subtitles, setSubtitles] = useState<Subtitle[]>([]);
   const [subtitlesLoading, setSubtitlesLoading] = useState(true);
   const [subtitlesError, setSubtitlesError] = useState<string | null>(null);
+  const [subtitlesMissing, setSubtitlesMissing] = useState(false);
 
   const playerRef = useRef<YTPlayer | null>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
@@ -403,20 +404,26 @@ export default function PlayerPage({
       try {
         setSubtitlesLoading(true);
         setSubtitlesError(null);
+        setSubtitlesMissing(false);
         const response = await fetch(`/api/subtitles/${videoId}`);
+        const data = await response.json().catch(() => ({}));
 
-        if (!response.ok) {
-          throw new Error(`Failed to fetch subtitles: ${response.statusText}`);
+        if (!response.ok && !Array.isArray(data.subtitles)) {
+          throw new Error(data.error || data.message || `加载失败 (${response.status})`);
         }
 
-        const data = await response.json();
-        setSubtitles(data.subtitles);
+        const subs: Subtitle[] = Array.isArray(data.subtitles) ? data.subtitles : [];
+        setSubtitles(subs);
 
-        // 后台翻译字幕
-        translateSubtitlesInBackground(data.subtitles);
+        if (subs.length === 0) {
+          setSubtitlesMissing(true);
+          if (data.message) setSubtitlesError(data.message);
+        } else {
+          translateSubtitlesInBackground(subs);
+        }
       } catch (error) {
         console.error("Error fetching subtitles:", error);
-        setSubtitlesError(error instanceof Error ? error.message : "Failed to load subtitles");
+        setSubtitlesError(error instanceof Error ? error.message : "字幕加载失败");
       } finally {
         setSubtitlesLoading(false);
       }
@@ -1470,7 +1477,11 @@ export default function PlayerPage({
                 </>
               ) : (
                 <div className="py-8 text-center text-white/40">
-                  等待字幕...
+                  {subtitlesLoading
+                    ? "加载字幕中..."
+                    : subtitlesMissing
+                      ? subtitlesError || "该视频未提供字幕"
+                      : "等待字幕..."}
                 </div>
               )}
             </div>
@@ -1735,9 +1746,46 @@ export default function PlayerPage({
                       <p className="text-sm text-white/60">加载字幕中...</p>
                     </div>
                   </div>
+                ) : subtitlesMissing ? (
+                  <div className="rounded-lg border border-white/10 bg-white/5 p-6 text-center">
+                    <div className="mb-3 text-4xl">🙊</div>
+                    <p className="mb-2 text-sm font-semibold text-white/80">
+                      {subtitlesError || "该视频没有字幕"}
+                    </p>
+                    <p className="text-xs text-white/50">
+                      视频仍可正常播放，但字幕相关功能（逐词词典、保存短语、A↔B 循环等）将不可用。
+                      可尝试其他带字幕的视频。
+                    </p>
+                  </div>
                 ) : subtitlesError ? (
                   <div className="rounded-lg border border-red-500/20 bg-red-500/10 p-4 text-center">
-                    <p className="text-sm text-red-400">{subtitlesError}</p>
+                    <p className="mb-2 text-sm font-semibold text-red-300">字幕加载失败</p>
+                    <p className="text-xs text-red-400/80">{subtitlesError}</p>
+                    <button
+                      onClick={() => {
+                        setSubtitlesError(null);
+                        setSubtitlesLoading(true);
+                        fetch(`/api/subtitles/${videoId}`)
+                          .then((r) => r.json())
+                          .then((d) => {
+                            const subs = Array.isArray(d.subtitles) ? d.subtitles : [];
+                            setSubtitles(subs);
+                            if (subs.length === 0) {
+                              setSubtitlesMissing(true);
+                              if (d.message) setSubtitlesError(d.message);
+                            } else {
+                              translateSubtitlesInBackground(subs);
+                            }
+                          })
+                          .catch((e) =>
+                            setSubtitlesError(e instanceof Error ? e.message : "字幕加载失败")
+                          )
+                          .finally(() => setSubtitlesLoading(false));
+                      }}
+                      className="mt-3 rounded-lg border border-red-400/40 px-3 py-1 text-xs text-red-300 hover:bg-red-500/10"
+                    >
+                      重试
+                    </button>
                   </div>
                 ) : subtitles.length === 0 ? (
                   <div className="rounded-lg border border-white/10 bg-white/5 p-4 text-center">
