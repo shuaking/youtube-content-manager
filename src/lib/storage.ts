@@ -48,6 +48,19 @@ export interface HistoryEntry {
   metadata?: { duration?: string; wordsLearned?: number; progress?: number };
 }
 
+export interface SubtitleStyle {
+  fontFamily: "sans" | "serif" | "mono";
+  fontColor: string;
+  strokeEnabled: boolean;
+  strokeColor: string;
+  strokeWidth: number;
+  bgColor: string;
+  bgOpacity: number;
+  xPercent: number;
+  yPercent: number;
+  alignment: "left" | "center" | "right";
+}
+
 export interface UserSettings {
   learningLang: string;
   translationLang: string;
@@ -63,6 +76,7 @@ export interface UserSettings {
   colorUnderlines: boolean;
   showMachineTranslation: boolean;
   showHumanTranslation: boolean;
+  subtitleStyle: SubtitleStyle;
 }
 
 export interface ChatMessage {
@@ -347,6 +361,19 @@ export function clearHistory(): void {
 }
 
 // Settings
+export const defaultSubtitleStyle: SubtitleStyle = {
+  fontFamily: "sans",
+  fontColor: "#ffffff",
+  strokeEnabled: true,
+  strokeColor: "#000000",
+  strokeWidth: 2,
+  bgColor: "#000000",
+  bgOpacity: 0.7,
+  xPercent: 50,
+  yPercent: 85,
+  alignment: "center",
+};
+
 export const defaultSettings: UserSettings = {
   learningLang: "en",
   translationLang: "zh-CN",
@@ -362,13 +389,16 @@ export const defaultSettings: UserSettings = {
   colorUnderlines: true,
   showMachineTranslation: true,
   showHumanTranslation: true,
+  subtitleStyle: defaultSubtitleStyle,
 };
 
 export function readSettings(): UserSettings {
   if (cache.settings) return cache.settings;
-  const data = {
+  const stored = read<Partial<UserSettings>>(KEYS.settings, {});
+  const data: UserSettings = {
     ...defaultSettings,
-    ...read<Partial<UserSettings>>(KEYS.settings, {}),
+    ...stored,
+    subtitleStyle: { ...defaultSubtitleStyle, ...(stored.subtitleStyle || {}) },
   };
   cache.settings = data;
   return data;

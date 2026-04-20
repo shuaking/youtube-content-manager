@@ -8,7 +8,7 @@ import { SubtitleWord, Subtitle } from "@/types/subtitles";
 import { Video } from "@/types/catalog";
 import { exportSubtitles, exportVocabulary } from "@/lib/export";
 import { useSavedWords, useSettings } from "@/hooks/useStore";
-import { saveWord, unsaveWord, logActivity, savePhrase } from "@/lib/storage";
+import { saveWord, unsaveWord, logActivity, savePhrase, writeSettings, readSettings, SubtitleStyle } from "@/lib/storage";
 
 // YouTube IFrame API types
 interface YTPlayer {
@@ -72,6 +72,220 @@ function ShortRow({ label, keys }: { label: string; keys: string[] }) {
   );
 }
 
+function hexToRgba(hex: string, alpha: number): string {
+  const m = /^#?([a-f0-9]{3}|[a-f0-9]{6})$/i.exec(hex.trim());
+  if (!m) return `rgba(0,0,0,${alpha})`;
+  let h = m[1];
+  if (h.length === 3) h = h.split("").map((c) => c + c).join("");
+  const r = parseInt(h.slice(0, 2), 16);
+  const g = parseInt(h.slice(2, 4), 16);
+  const b = parseInt(h.slice(4, 6), 16);
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
+function buildTextStroke(color: string, width: number): string {
+  const w = Math.max(0, Math.min(6, width));
+  if (w === 0) return "none";
+  const parts: string[] = [];
+  for (let dx = -w; dx <= w; dx++) {
+    for (let dy = -w; dy <= w; dy++) {
+      if (dx === 0 && dy === 0) continue;
+      if (Math.abs(dx) + Math.abs(dy) > w + 1) continue;
+      parts.push(`${dx}px ${dy}px 0 ${color}`);
+    }
+  }
+  return parts.join(", ");
+}
+
+function avgDifficultyColor(words: SubtitleWord[] | undefined): string {
+  if (!words || words.length === 0) return "rgba(255,255,255,0.25)";
+  let sum = 0;
+  let n = 0;
+  for (const w of words) {
+    if (!w.difficulty) continue;
+    sum += w.difficulty === "beginner" ? 1 : w.difficulty === "intermediate" ? 2 : 3;
+    n++;
+  }
+  if (n === 0) return "rgba(255,255,255,0.25)";
+  const avg = sum / n;
+  if (avg < 1.7) return "rgba(96,165,250,0.55)"; // blue-400
+  if (avg < 2.3) return "rgba(250,204,21,0.55)"; // yellow-400
+  return "rgba(248,113,113,0.55)"; // red-400
+}
+
+function StyleEditor({
+  style,
+  onChange,
+  onReset,
+}: {
+  style: SubtitleStyle;
+  onChange: (s: SubtitleStyle) => void;
+  onReset: () => void;
+}) {
+  const patch = (p: Partial<SubtitleStyle>) => onChange({ ...style, ...p });
+  return (
+    <div className="space-y-5">
+      <div className="grid gap-4 md:grid-cols-2">
+        <label className="block text-sm">
+          <span className="mb-1 block font-semibold text-white/80">字体族</span>
+          <select
+            value={style.fontFamily}
+            onChange={(e) => patch({ fontFamily: e.target.value as SubtitleStyle["fontFamily"] })}
+            className="w-full rounded-lg border border-white/20 bg-background px-3 py-2 text-white outline-none focus:border-secondary"
+          >
+            <option value="sans">无衬线 (Sans)</option>
+            <option value="serif">衬线 (Serif)</option>
+            <option value="mono">等宽 (Mono)</option>
+          </select>
+        </label>
+        <label className="block text-sm">
+          <span className="mb-1 block font-semibold text-white/80">对齐</span>
+          <select
+            value={style.alignment}
+            onChange={(e) => patch({ alignment: e.target.value as SubtitleStyle["alignment"] })}
+            className="w-full rounded-lg border border-white/20 bg-background px-3 py-2 text-white outline-none focus:border-secondary"
+          >
+            <option value="left">左对齐</option>
+            <option value="center">居中</option>
+            <option value="right">右对齐</option>
+          </select>
+        </label>
+        <ColorRow
+          label="文字颜色"
+          value={style.fontColor}
+          onChange={(v) => patch({ fontColor: v })}
+        />
+        <ColorRow
+          label="背景颜色"
+          value={style.bgColor}
+          onChange={(v) => patch({ bgColor: v })}
+        />
+      </div>
+
+      <label className="block text-sm">
+        <span className="mb-1 flex items-center justify-between font-semibold text-white/80">
+          <span>背景不透明度</span>
+          <span className="text-xs text-white/50">{Math.round(style.bgOpacity * 100)}%</span>
+        </span>
+        <input
+          type="range"
+          min={0}
+          max={1}
+          step={0.05}
+          value={style.bgOpacity}
+          onChange={(e) => patch({ bgOpacity: Number(e.target.value) })}
+          className="w-full"
+        />
+      </label>
+
+      <label className="flex items-center gap-3 text-sm text-white/80">
+        <input
+          type="checkbox"
+          checked={style.strokeEnabled}
+          onChange={(e) => patch({ strokeEnabled: e.target.checked })}
+          className="h-4 w-4"
+        />
+        <span>启用描边</span>
+      </label>
+
+      {style.strokeEnabled && (
+        <div className="grid gap-4 md:grid-cols-2">
+          <ColorRow
+            label="描边颜色"
+            value={style.strokeColor}
+            onChange={(v) => patch({ strokeColor: v })}
+          />
+          <label className="block text-sm">
+            <span className="mb-1 flex items-center justify-between font-semibold text-white/80">
+              <span>描边宽度</span>
+              <span className="text-xs text-white/50">{style.strokeWidth}px</span>
+            </span>
+            <input
+              type="range"
+              min={0}
+              max={6}
+              step={1}
+              value={style.strokeWidth}
+              onChange={(e) => patch({ strokeWidth: Number(e.target.value) })}
+              className="w-full"
+            />
+          </label>
+        </div>
+      )}
+
+      <div className="grid gap-4 md:grid-cols-2">
+        <label className="block text-sm">
+          <span className="mb-1 flex items-center justify-between font-semibold text-white/80">
+            <span>水平位置</span>
+            <span className="text-xs text-white/50">{Math.round(style.xPercent)}%</span>
+          </span>
+          <input
+            type="range"
+            min={5}
+            max={95}
+            step={1}
+            value={style.xPercent}
+            onChange={(e) => patch({ xPercent: Number(e.target.value) })}
+            className="w-full"
+          />
+        </label>
+        <label className="block text-sm">
+          <span className="mb-1 flex items-center justify-between font-semibold text-white/80">
+            <span>垂直位置</span>
+            <span className="text-xs text-white/50">{Math.round(style.yPercent)}%</span>
+          </span>
+          <input
+            type="range"
+            min={5}
+            max={95}
+            step={1}
+            value={style.yPercent}
+            onChange={(e) => patch({ yPercent: Number(e.target.value) })}
+            className="w-full"
+          />
+        </label>
+      </div>
+
+      <button
+        onClick={onReset}
+        className="w-full rounded-lg border border-white/20 px-4 py-2 text-sm text-white transition-all hover:bg-white/10"
+      >
+        重置为默认
+      </button>
+    </div>
+  );
+}
+
+function ColorRow({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <label className="block text-sm">
+      <span className="mb-1 block font-semibold text-white/80">{label}</span>
+      <div className="flex items-center gap-2">
+        <input
+          type="color"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          className="h-10 w-16 cursor-pointer rounded border border-white/20 bg-transparent"
+        />
+        <input
+          type="text"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          className="flex-1 rounded-lg border border-white/10 bg-background px-3 py-2 font-mono text-xs text-white outline-none focus:border-white/20"
+        />
+      </div>
+    </label>
+  );
+}
+
 export default function PlayerPage({
   params,
 }: {
@@ -92,6 +306,11 @@ export default function PlayerPage({
   const [overlayCaption, setOverlayCaption] = useState(false);
   const [subtitleFontScale, setSubtitleFontScale] = useState(1);
   const [subtitleSearch, setSubtitleSearch] = useState("");
+  const [loopA, setLoopA] = useState<number | null>(null);
+  const [loopB, setLoopB] = useState<number | null>(null);
+  const [loopAB, setLoopAB] = useState(false);
+  const [showStylePanel, setShowStylePanel] = useState(false);
+  const [dragging, setDragging] = useState(false);
   const [phraseToast, setPhraseToast] = useState<string | null>(null);
   const [copyToast, setCopyToast] = useState<string | null>(null);
   const [selectedWord, setSelectedWord] = useState<SubtitleWord | null>(null);
@@ -345,6 +564,14 @@ export default function PlayerPage({
     }
   }, [currentTime, currentSubtitle, autoPause, loopCurrent, isPlaying, playerReady]);
 
+  // A↔B loop across arbitrary range
+  useEffect(() => {
+    if (!loopAB || loopA == null || loopB == null || !playerReady || !playerRef.current) return;
+    if (currentTime >= loopB - 0.05) {
+      playerRef.current.seekTo(loopA, true);
+    }
+  }, [currentTime, loopAB, loopA, loopB, playerReady]);
+
   // Auto-scroll subtitle list to current subtitle
   useEffect(() => {
     if (currentSubtitle && subtitleListRef.current) {
@@ -509,6 +736,18 @@ export default function PlayerPage({
         case ".":
         case ">":
           setPlaybackSpeed((prev) => Math.min(2, prev + 0.25));
+          break;
+
+        // Frame-level step (~1/25s)
+        case "[":
+          if (playerReady && playerRef.current) {
+            playerRef.current.seekTo(Math.max(0, currentTime - 1 / 25), true);
+          }
+          break;
+        case "]":
+          if (playerReady && playerRef.current) {
+            playerRef.current.seekTo(currentTime + 1 / 25, true);
+          }
           break;
 
         // Toggle translation
@@ -984,29 +1223,94 @@ export default function PlayerPage({
               <div id="youtube-player" className="absolute inset-0 h-full w-full" />
 
               {/* Subtitle overlay */}
-              {overlayCaption && currentSubtitle && (
-                <div className="pointer-events-none absolute inset-x-0 bottom-6 z-20 flex flex-col items-center gap-2 px-8 text-center">
+              {overlayCaption && currentSubtitle && (() => {
+                const st = settings.subtitleStyle;
+                const familyMap = {
+                  sans: "ui-sans-serif, system-ui, sans-serif",
+                  serif: "ui-serif, Georgia, serif",
+                  mono: "ui-monospace, Menlo, monospace",
+                };
+                const bg = hexToRgba(st.bgColor, st.bgOpacity);
+                const textShadow = st.strokeEnabled
+                  ? buildTextStroke(st.strokeColor, st.strokeWidth)
+                  : "none";
+                const alignClass = {
+                  left: "items-start text-left",
+                  center: "items-center text-center",
+                  right: "items-end text-right",
+                }[st.alignment];
+                return (
                   <div
-                    className={`pointer-events-auto max-w-[90%] rounded-lg bg-black/70 px-4 py-2 text-white shadow-lg backdrop-blur-sm transition-all ${
-                      fuzzyMode ? "select-none blur-sm hover:blur-0" : ""
+                    className={`absolute z-20 flex flex-col gap-2 px-4 ${alignClass} ${
+                      dragging ? "cursor-grabbing" : "cursor-grab"
                     }`}
-                    style={{ fontSize: `${1.4 * subtitleFontScale}rem`, lineHeight: 1.4 }}
-                    onClick={() => fuzzyMode && setFuzzyMode(false)}
+                    style={{
+                      left: `${st.xPercent}%`,
+                      top: `${st.yPercent}%`,
+                      transform: "translate(-50%, -50%)",
+                      maxWidth: "90%",
+                    }}
+                    onPointerDown={(e) => {
+                      const container = (e.currentTarget.parentElement as HTMLElement) || null;
+                      if (!container) return;
+                      const rect = container.getBoundingClientRect();
+                      setDragging(true);
+                      e.currentTarget.setPointerCapture(e.pointerId);
+                      const onMove = (ev: PointerEvent) => {
+                        const x = ((ev.clientX - rect.left) / rect.width) * 100;
+                        const y = ((ev.clientY - rect.top) / rect.height) * 100;
+                        const next = {
+                          ...readSettings().subtitleStyle,
+                          xPercent: Math.max(5, Math.min(95, x)),
+                          yPercent: Math.max(5, Math.min(95, y)),
+                        };
+                        writeSettings({ ...readSettings(), subtitleStyle: next });
+                      };
+                      const onUp = () => {
+                        setDragging(false);
+                        window.removeEventListener("pointermove", onMove);
+                        window.removeEventListener("pointerup", onUp);
+                      };
+                      window.addEventListener("pointermove", onMove);
+                      window.addEventListener("pointerup", onUp);
+                    }}
                   >
-                    {renderSubtitleText(currentSubtitle)}
-                  </div>
-                  {showTranslation && currentSubtitle.translatedText && (
                     <div
-                      className={`pointer-events-auto max-w-[90%] rounded-lg bg-black/60 px-3 py-1 text-white/90 shadow backdrop-blur-sm ${
-                        blurTranslation ? "select-none blur-sm hover:blur-0" : ""
+                      className={`rounded-lg px-4 py-2 shadow-lg transition-all ${
+                        fuzzyMode ? "select-none blur-sm hover:blur-0" : ""
                       }`}
-                      style={{ fontSize: `${1.0 * subtitleFontScale}rem` }}
+                      style={{
+                        fontSize: `${1.4 * subtitleFontScale}rem`,
+                        lineHeight: 1.4,
+                        fontFamily: familyMap[st.fontFamily],
+                        color: st.fontColor,
+                        background: bg,
+                        textShadow,
+                      }}
+                      onClick={() => fuzzyMode && setFuzzyMode(false)}
                     >
-                      {currentSubtitle.translatedText}
+                      {renderSubtitleText(currentSubtitle)}
                     </div>
-                  )}
-                </div>
-              )}
+                    {showTranslation && currentSubtitle.translatedText && (
+                      <div
+                        className={`rounded-lg px-3 py-1 shadow ${
+                          blurTranslation ? "select-none blur-sm hover:blur-0" : ""
+                        }`}
+                        style={{
+                          fontSize: `${1.0 * subtitleFontScale}rem`,
+                          fontFamily: familyMap[st.fontFamily],
+                          color: st.fontColor,
+                          background: bg,
+                          textShadow,
+                          opacity: 0.95,
+                        }}
+                      >
+                        {currentSubtitle.translatedText}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
             </div>
 
             {/* Custom Progress Bar */}
@@ -1025,28 +1329,44 @@ export default function PlayerPage({
                   onMouseLeave={handleProgressBarLeave}
                   className="group relative h-12 cursor-pointer rounded-lg bg-white/5 transition-all hover:bg-white/10"
                 >
-                  {/* Subtitle Segments */}
+                  {/* Subtitle Segments (heatmap by vocabulary difficulty) */}
                   {subtitles.map((subtitle) => {
                     const startPercent = (subtitle.startTime / videoDuration) * 100;
                     const widthPercent = ((subtitle.endTime - subtitle.startTime) / videoDuration) * 100;
                     const isActive = currentSubtitle?.id === subtitle.id;
+                    const heatColor = avgDifficultyColor(subtitle.words);
 
                     return (
                       <div
                         key={subtitle.id}
                         className={`absolute top-0 h-full transition-all ${
-                          isActive
-                            ? "bg-secondary/60 ring-2 ring-secondary"
-                            : "bg-white/20 hover:bg-white/30"
+                          isActive ? "ring-2 ring-secondary" : "hover:brightness-125"
                         }`}
                         style={{
                           left: `${startPercent}%`,
                           width: `${widthPercent}%`,
+                          background: heatColor,
                         }}
                         title={`${subtitle.startTime.toFixed(1)}s - ${subtitle.endTime.toFixed(1)}s: ${subtitle.originalText}`}
                       />
                     );
                   })}
+
+                  {/* A/B loop markers */}
+                  {loopA != null && (
+                    <div
+                      className="absolute top-0 h-full w-0.5 bg-green-400"
+                      style={{ left: `${(loopA / videoDuration) * 100}%` }}
+                      title={`A: ${loopA.toFixed(2)}s`}
+                    />
+                  )}
+                  {loopB != null && (
+                    <div
+                      className="absolute top-0 h-full w-0.5 bg-pink-400"
+                      style={{ left: `${(loopB / videoDuration) * 100}%` }}
+                      title={`B: ${loopB.toFixed(2)}s`}
+                    />
+                  )}
 
                   {/* Current Time Indicator */}
                   <div
@@ -1311,6 +1631,71 @@ export default function PlayerPage({
                 >
                   ↻ 重播
                 </button>
+                <button
+                  onClick={() =>
+                    playerReady &&
+                    playerRef.current?.seekTo(Math.max(0, currentTime - 1 / 25), true)
+                  }
+                  className="rounded-lg border border-white/20 px-2 py-1 text-xs text-white transition-all hover:bg-white/10"
+                  title="前一帧 ([)"
+                >
+                  ◀|
+                </button>
+                <button
+                  onClick={() =>
+                    playerReady && playerRef.current?.seekTo(currentTime + 1 / 25, true)
+                  }
+                  className="rounded-lg border border-white/20 px-2 py-1 text-xs text-white transition-all hover:bg-white/10"
+                  title="后一帧 (])"
+                >
+                  |▶
+                </button>
+                <button
+                  onClick={() => setShowStylePanel(true)}
+                  className="rounded-lg border border-white/20 px-3 py-1 text-xs text-white transition-all hover:bg-white/10"
+                  title="字幕样式"
+                >
+                  🎨 样式
+                </button>
+              </div>
+
+              {/* A-B loop controls */}
+              <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-white/10 pt-3 text-xs">
+                <span className="text-white/60">A↔B 循环</span>
+                <button
+                  onClick={() => setLoopA(currentTime)}
+                  className="rounded border border-green-400/50 bg-green-400/10 px-3 py-1 text-green-300 hover:bg-green-400/20"
+                >
+                  设 A {loopA != null ? `(${formatTime(loopA)})` : ""}
+                </button>
+                <button
+                  onClick={() => setLoopB(currentTime)}
+                  className="rounded border border-pink-400/50 bg-pink-400/10 px-3 py-1 text-pink-300 hover:bg-pink-400/20"
+                >
+                  设 B {loopB != null ? `(${formatTime(loopB)})` : ""}
+                </button>
+                <label className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={loopAB}
+                    disabled={loopA == null || loopB == null || (loopB != null && loopA != null && loopB <= loopA)}
+                    onChange={(e) => setLoopAB(e.target.checked)}
+                    className="h-4 w-4"
+                  />
+                  <span className={loopA != null && loopB != null ? "text-white/80" : "text-white/40"}>
+                    启用循环
+                  </span>
+                </label>
+                <button
+                  onClick={() => {
+                    setLoopA(null);
+                    setLoopB(null);
+                    setLoopAB(false);
+                  }}
+                  className="rounded border border-white/20 px-3 py-1 text-white/70 hover:bg-white/10"
+                >
+                  清除
+                </button>
               </div>
             </div>
           </div>
@@ -1453,6 +1838,8 @@ export default function PlayerPage({
                 <div className="space-y-2">
                   <ShortRow label="减速 0.25x" keys={["<"]} />
                   <ShortRow label="加速 0.25x" keys={[">"]} />
+                  <ShortRow label="前一帧 (~1/25s)" keys={["["]} />
+                  <ShortRow label="后一帧 (~1/25s)" keys={["]"]} />
                 </div>
               </div>
 
@@ -1749,6 +2136,46 @@ export default function PlayerPage({
                 关闭
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Subtitle Style Panel */}
+      {showStylePanel && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-sm">
+          <div className="relative max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-white/10 bg-card p-8 shadow-2xl">
+            <button
+              onClick={() => setShowStylePanel(false)}
+              className="absolute right-4 top-4 rounded-lg p-2 text-white/60 transition-all hover:bg-white/10 hover:text-white"
+              aria-label="关闭"
+            >
+              <span className="text-2xl">×</span>
+            </button>
+            <h2 className="mb-2 text-2xl font-bold text-white">字幕样式</h2>
+            <p className="mb-6 text-sm text-white/60">
+              修改仅在开启&ldquo;视频上字幕&rdquo;时生效。拖拽字幕可自由调整位置。
+            </p>
+            <StyleEditor
+              style={settings.subtitleStyle}
+              onChange={(s) => writeSettings({ ...readSettings(), subtitleStyle: s })}
+              onReset={() => {
+                writeSettings({
+                  ...readSettings(),
+                  subtitleStyle: {
+                    fontFamily: "sans",
+                    fontColor: "#ffffff",
+                    strokeEnabled: true,
+                    strokeColor: "#000000",
+                    strokeWidth: 2,
+                    bgColor: "#000000",
+                    bgOpacity: 0.7,
+                    xPercent: 50,
+                    yPercent: 85,
+                    alignment: "center",
+                  },
+                });
+              }}
+            />
           </div>
         </div>
       )}
