@@ -7,7 +7,7 @@ import { PlayIcon, ChevronRightIcon } from "@/components/icons";
 import { SubtitleWord, Subtitle } from "@/types/subtitles";
 import { Video } from "@/types/catalog";
 import { exportSubtitles, exportVocabulary } from "@/lib/export";
-import { useSavedWords } from "@/hooks/useStore";
+import { useSavedWords, useSettings } from "@/hooks/useStore";
 import { saveWord, unsaveWord, logActivity, savePhrase } from "@/lib/storage";
 
 // YouTube IFrame API types
@@ -79,6 +79,7 @@ export default function PlayerPage({
 }) {
   const { videoId } = use(params);
   const router = useRouter();
+  const [settings] = useSettings();
   const [activeTab, setActiveTab] = useState<"text" | "words">("text");
   const [currentTime, setCurrentTime] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -86,14 +87,24 @@ export default function PlayerPage({
   const [autoPause, setAutoPause] = useState(true);
   const [showTranslation, setShowTranslation] = useState(true);
   const [fuzzyMode, setFuzzyMode] = useState(false);
+  const [blurTranslation, setBlurTranslation] = useState(false);
+  const [loopCurrent, setLoopCurrent] = useState(false);
+  const [overlayCaption, setOverlayCaption] = useState(false);
+  const [subtitleFontScale, setSubtitleFontScale] = useState(1);
+  const [subtitleSearch, setSubtitleSearch] = useState("");
   const [phraseToast, setPhraseToast] = useState<string | null>(null);
   const [copyToast, setCopyToast] = useState<string | null>(null);
   const [selectedWord, setSelectedWord] = useState<SubtitleWord | null>(null);
-  const [savedWordsList] = [useSavedWords()];
+  const savedWordsFull = useSavedWords();
   const savedWords = useMemo(
-    () => new Set(savedWordsList.map((w) => w.word.toLowerCase())),
-    [savedWordsList]
+    () => new Set(savedWordsFull.map((w) => w.word.toLowerCase())),
+    [savedWordsFull]
   );
+  const stageByWord = useMemo(() => {
+    const m = new Map<string, "known" | "learning" | "uncommon" | "ignore">();
+    savedWordsFull.forEach((w) => m.set(w.word.toLowerCase(), w.stage || "learning"));
+    return m;
+  }, [savedWordsFull]);
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [playerReady, setPlayerReady] = useState(false);
   const [videoDuration, setVideoDuration] = useState(0);
@@ -310,14 +321,29 @@ export default function PlayerPage({
     }
   }, [playbackSpeed, playerReady]);
 
-  // Auto-pause at subtitle end
+  // Sync initial values from settings once on mount
+  const settingsSyncedRef = useRef(false);
   useEffect(() => {
-    if (autoPause && currentSubtitle && isPlaying && playerReady && playerRef.current) {
-      if (currentTime >= currentSubtitle.endTime - 0.1) {
+    if (settingsSyncedRef.current) return;
+    settingsSyncedRef.current = true;
+    setAutoPause(settings.autoPause);
+    setFuzzyMode(settings.hideSubtitles);
+    setShowTranslation(
+      settings.showMachineTranslation || settings.showHumanTranslation
+    );
+  }, [settings]);
+
+  // Auto-pause or loop at subtitle end
+  useEffect(() => {
+    if (!currentSubtitle || !isPlaying || !playerReady || !playerRef.current) return;
+    if (currentTime >= currentSubtitle.endTime - 0.1) {
+      if (loopCurrent) {
+        playerRef.current.seekTo(currentSubtitle.startTime, true);
+      } else if (autoPause) {
         playerRef.current.pauseVideo();
       }
     }
-  }, [currentTime, currentSubtitle, autoPause, isPlaying, playerReady]);
+  }, [currentTime, currentSubtitle, autoPause, loopCurrent, isPlaying, playerReady]);
 
   // Auto-scroll subtitle list to current subtitle
   useEffect(() => {
@@ -542,9 +568,19 @@ export default function PlayerPage({
     }
   };
 
+  const speakWord = (text: string) => {
+    if (typeof window === "undefined" || !window.speechSynthesis) return;
+    const utter = new SpeechSynthesisUtterance(text);
+    utter.lang = "en-US";
+    utter.rate = 0.9;
+    window.speechSynthesis.cancel();
+    window.speechSynthesis.speak(utter);
+  };
+
   const handleWordClick = async (word: SubtitleWord) => {
     setDictionaryWord({ ...word, translation: "加载中...", definition: "加载中..." });
     setShowDictionaryModal(true);
+    if (settings.speakOnClick) speakWord(word.text);
 
     try {
       const [translationRes, definitionRes] = await Promise.all([
@@ -587,21 +623,34 @@ export default function PlayerPage({
   };
 
   const getWordDifficultyStyle = (word: SubtitleWord) => {
-    const isSaved = word.saved || savedWords.has(word.text.toLowerCase());
+    const key = word.text.toLowerCase();
+    const isSaved = word.saved || savedWords.has(key);
+    const stage = stageByWord.get(key);
+    const base = "cursor-pointer rounded px-1 transition-all";
 
-    if (!word.difficulty) {
-      return isSaved ? "cursor-pointer rounded bg-secondary/30 px-1 hover:bg-secondary/50" : "";
+    // Stage-based colored underline (takes precedence when enabled and saved)
+    if (isSaved && settings.colorUnderlines && stage) {
+      const stageStyles: Record<string, string> = {
+        known: "underline decoration-white decoration-2 underline-offset-4 hover:bg-white/10",
+        learning:
+          "underline decoration-orange-400 decoration-2 underline-offset-4 bg-orange-500/10 hover:bg-orange-500/20 text-orange-200",
+        uncommon:
+          "underline decoration-white/40 decoration-dotted underline-offset-4 hover:bg-white/5 text-white/60",
+        ignore: "text-white/40 hover:text-white/60",
+      };
+      return `${base} ${stageStyles[stage] || ""}`;
     }
 
-    // Difficulty-based highlighting
-    const baseStyle = "cursor-pointer rounded px-1 transition-all";
+    if (!word.difficulty) {
+      return isSaved ? `${base} bg-secondary/30 hover:bg-secondary/50` : "";
+    }
+
     const difficultyColors = {
       beginner: "bg-blue-500/20 text-blue-300 hover:bg-blue-500/30",
       intermediate: "bg-yellow-500/20 text-yellow-300 hover:bg-yellow-500/30",
       advanced: "bg-red-500/20 text-red-300 hover:bg-red-500/30",
     };
-
-    return `${baseStyle} ${difficultyColors[word.difficulty]}`;
+    return `${base} ${difficultyColors[word.difficulty]}`;
   };
 
   const renderSubtitleText = (subtitle: Subtitle) => {
@@ -933,6 +982,31 @@ export default function PlayerPage({
             <div className="relative mb-4 aspect-video overflow-hidden rounded-2xl border border-white/10 bg-black">
               {/* YouTube Player Container */}
               <div id="youtube-player" className="absolute inset-0 h-full w-full" />
+
+              {/* Subtitle overlay */}
+              {overlayCaption && currentSubtitle && (
+                <div className="pointer-events-none absolute inset-x-0 bottom-6 z-20 flex flex-col items-center gap-2 px-8 text-center">
+                  <div
+                    className={`pointer-events-auto max-w-[90%] rounded-lg bg-black/70 px-4 py-2 text-white shadow-lg backdrop-blur-sm transition-all ${
+                      fuzzyMode ? "select-none blur-sm hover:blur-0" : ""
+                    }`}
+                    style={{ fontSize: `${1.4 * subtitleFontScale}rem`, lineHeight: 1.4 }}
+                    onClick={() => fuzzyMode && setFuzzyMode(false)}
+                  >
+                    {renderSubtitleText(currentSubtitle)}
+                  </div>
+                  {showTranslation && currentSubtitle.translatedText && (
+                    <div
+                      className={`pointer-events-auto max-w-[90%] rounded-lg bg-black/60 px-3 py-1 text-white/90 shadow backdrop-blur-sm ${
+                        blurTranslation ? "select-none blur-sm hover:blur-0" : ""
+                      }`}
+                      style={{ fontSize: `${1.0 * subtitleFontScale}rem` }}
+                    >
+                      {currentSubtitle.translatedText}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Custom Progress Bar */}
@@ -1145,7 +1219,98 @@ export default function PlayerPage({
                     />
                     <span className="text-sm text-white/80">显示翻译</span>
                   </label>
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={loopCurrent}
+                      onChange={(e) => setLoopCurrent(e.target.checked)}
+                      className="h-4 w-4"
+                    />
+                    <span className="text-sm text-white/80">循环当前句</span>
+                  </label>
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={overlayCaption}
+                      onChange={(e) => setOverlayCaption(e.target.checked)}
+                      className="h-4 w-4"
+                    />
+                    <span className="text-sm text-white/80">视频上字幕</span>
+                  </label>
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={blurTranslation}
+                      onChange={(e) => setBlurTranslation(e.target.checked)}
+                      className="h-4 w-4"
+                    />
+                    <span className="text-sm text-white/80">模糊翻译</span>
+                  </label>
                 </div>
+              </div>
+
+              {/* Caption size + PiP + quick actions */}
+              <div className="mt-3 flex flex-wrap items-center gap-3 border-t border-white/10 pt-3">
+                <span className="text-xs text-white/60">字幕字号</span>
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() =>
+                      setSubtitleFontScale((s) => Math.max(0.6, +(s - 0.1).toFixed(2)))
+                    }
+                    className="rounded border border-white/20 px-2 py-0.5 text-xs text-white hover:bg-white/10"
+                    title="缩小"
+                  >
+                    A-
+                  </button>
+                  <span className="w-10 text-center text-xs text-white/70">
+                    {Math.round(subtitleFontScale * 100)}%
+                  </span>
+                  <button
+                    onClick={() =>
+                      setSubtitleFontScale((s) => Math.min(2.0, +(s + 0.1).toFixed(2)))
+                    }
+                    className="rounded border border-white/20 px-2 py-0.5 text-xs text-white hover:bg-white/10"
+                    title="放大"
+                  >
+                    A+
+                  </button>
+                </div>
+                <button
+                  onClick={async () => {
+                    const iframe = document.querySelector<HTMLIFrameElement>("#youtube-player iframe");
+                    if (!iframe) return;
+                    try {
+                      type PiPWindow = Window & {
+                        documentPictureInPicture?: {
+                          requestWindow: (o?: { width?: number; height?: number }) => Promise<Window>;
+                        };
+                      };
+                      const wp = window as unknown as PiPWindow;
+                      if (wp.documentPictureInPicture) {
+                        await wp.documentPictureInPicture.requestWindow({ width: 640, height: 360 });
+                      } else {
+                        iframe.requestFullscreen?.();
+                      }
+                    } catch {
+                      /* ignore */
+                    }
+                  }}
+                  className="rounded-lg border border-white/20 px-3 py-1 text-xs text-white transition-all hover:bg-white/10"
+                  title="画中画 / 全屏"
+                >
+                  ⧉ PiP
+                </button>
+                <button
+                  onClick={() => {
+                    const idx = subtitles.findIndex((s) => s.id === currentSubtitle?.id);
+                    if (idx !== -1) handleSkipToSubtitle(subtitles[idx]);
+                  }}
+                  disabled={!currentSubtitle}
+                  className="rounded-lg border border-white/20 px-3 py-1 text-xs text-white transition-all hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-30"
+                  title="循环一次"
+                >
+                  ↻ 重播
+                </button>
               </div>
             </div>
           </div>
@@ -1161,6 +1326,16 @@ export default function PlayerPage({
                 <span className="text-sm text-white/60">
                   {subtitles.length} 条
                 </span>
+              </div>
+
+              <div className="mb-3">
+                <input
+                  type="text"
+                  placeholder="搜索字幕内容..."
+                  value={subtitleSearch}
+                  onChange={(e) => setSubtitleSearch(e.target.value)}
+                  className="w-full rounded-lg border border-white/10 bg-card px-3 py-2 text-sm text-white placeholder-white/40 outline-none focus:border-white/20 focus:ring-2 focus:ring-secondary/50"
+                />
               </div>
 
               {/* Subtitle List */}
@@ -1184,7 +1359,18 @@ export default function PlayerPage({
                     <p className="text-sm text-white/60">暂无字幕数据</p>
                   </div>
                 ) : (
-                  subtitles.map((subtitle) => (
+                  subtitles
+                    .filter((s) =>
+                      subtitleSearch.trim()
+                        ? s.originalText
+                            .toLowerCase()
+                            .includes(subtitleSearch.toLowerCase()) ||
+                          (s.translatedText || "")
+                            .toLowerCase()
+                            .includes(subtitleSearch.toLowerCase())
+                        : true
+                    )
+                    .map((subtitle) => (
                     <button
                       key={subtitle.id}
                       data-subtitle-id={subtitle.id}
@@ -1452,11 +1638,24 @@ export default function PlayerPage({
                   {dictionaryWord.text}
                 </h2>
                 <button
+                  onClick={() => speakWord(dictionaryWord.text)}
                   className="rounded-lg border border-white/20 p-2 text-white/60 transition-all hover:bg-white/10 hover:text-white"
                   title="发音"
+                  aria-label="发音"
                 >
                   <span className="text-xl">🔊</span>
                 </button>
+                {settings.customDictUrl && (
+                  <a
+                    href={settings.customDictUrl.replace(/WORD/g, encodeURIComponent(dictionaryWord.text))}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="rounded-lg border border-white/20 px-3 py-2 text-sm text-white/80 transition-all hover:bg-white/10"
+                    title="在自定义词典中查询"
+                  >
+                    📖 自定义词典
+                  </a>
+                )}
               </div>
 
               {/* Translation */}
