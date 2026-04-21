@@ -1750,12 +1750,37 @@ export default function PlayerPage({
                   <div className="rounded-lg border border-white/10 bg-white/5 p-6 text-center">
                     <div className="mb-3 text-4xl">🙊</div>
                     <p className="mb-2 text-sm font-semibold text-white/80">
-                      {subtitlesError || "该视频没有字幕"}
+                      {subtitlesError || "该视频未提供字幕"}
                     </p>
-                    <p className="text-xs text-white/50">
-                      视频仍可正常播放，但字幕相关功能（逐词词典、保存短语、A↔B 循环等）将不可用。
-                      可尝试其他带字幕的视频。
+                    <p className="mb-3 text-xs text-white/50">
+                      视频仍可正常播放，但字幕相关功能（逐词词典、保存短语、A↔B 循环等）不可用。
                     </p>
+                    <button
+                      onClick={() => {
+                        setSubtitlesError(null);
+                        setSubtitlesMissing(false);
+                        setSubtitlesLoading(true);
+                        fetch(`/api/subtitles/${videoId}`)
+                          .then((r) => r.json())
+                          .then((d) => {
+                            const subs = Array.isArray(d.subtitles) ? d.subtitles : [];
+                            setSubtitles(subs);
+                            if (subs.length === 0) {
+                              setSubtitlesMissing(true);
+                              if (d.message) setSubtitlesError(d.message);
+                            } else {
+                              translateSubtitlesInBackground(subs);
+                            }
+                          })
+                          .catch((e) =>
+                            setSubtitlesError(e instanceof Error ? e.message : "字幕加载失败")
+                          )
+                          .finally(() => setSubtitlesLoading(false));
+                      }}
+                      className="rounded-lg border border-white/20 px-3 py-1 text-xs text-white/80 hover:bg-white/10"
+                    >
+                      重试
+                    </button>
                   </div>
                 ) : subtitlesError ? (
                   <div className="rounded-lg border border-red-500/20 bg-red-500/10 p-4 text-center">
